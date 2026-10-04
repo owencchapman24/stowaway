@@ -10,7 +10,7 @@ Implementation date: **4 October 2026, America/New_York**. Authority: [October g
 - Local validation used an official portable **Node 22.23.3 / npm 10.9.9**, downloaded from nodejs.org into ignored `.tools/`. No system Node install or PowerShell execution policy was changed. Use an installed supported Node LTS for normal development; the temporary toolchain is not committed.
 - Stable npm dist-tag and official documentation were checked. Scaffold: `create-expo-app@5.0.0`, `default@sdk-57`. Final stack: **Expo 57.0.26, React Native 0.86.3, React 19.2.3, TypeScript 6.0.3**. `package-lock.json` is the single lockfile.
 - Owen reported **iPhone 17 Pro, iOS 26.7.1 (tentative)**; Expo Go not installed. Confirm iOS in Settings before the device run.
-- Current [Expo SDK 57 release notes](https://expo.dev/changelog/sdk-57) and [iPhone compatibility guidance](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/) say SDK 57 Expo Go on a physical iPhone uses `eas go` / TestFlight and requires Apple Developer membership. The App Store's SDK 54 client does not match. This implementation does not silently downgrade or buy/build anything. Physical installation is pending that prerequisite.
+- Installation guidance corrected on **4 October 2026**: SDK 57 is the current Expo Go SDK. Expo's [3 September 2026 update](https://expo.dev/changelog/expo-go-57-login) confirms that iOS Expo Go in the App Store supports SDK 57 and requires the same Expo account in Expo CLI and the app. Install/update App Store Expo Go, sign into it, and run `npx.cmd expo login` on Windows with that account before `npm.cmd start`. **Apple Developer membership, TestFlight and `eas go` are not required** for this project in the current App Store client. See [README](../README.md) for LAN/firewall steps. Physical installation/testing is still pending; the project remains on SDK 57.
 
 ## Implemented architecture
 
@@ -114,8 +114,53 @@ Validation: strict TypeScript and lint pass; **39 tests across 7 suites** pass; 
 
 The host SQLite integration covers fresh migration, repeated seed, close/reopen, metadata preservation, locator/preferences persistence, foreign keys, write serialization and injected pre-commit failure/rollback. Bridge tests execute the actual app script with a test DOM and emulated geometry; they do not establish real WKWebView layout. The native unit preset mocks native modules. CI runs a clean install, typecheck, lint, fixture tests, compatibility check and iOS export; the remote workflow has not been run here.
 
-`npm audit` reports **60 findings (50 high, 10 moderate)** in the SDK/tooling dependency tree, including propagated braces/micromatch, node-forge, uuid and Router query decoding advisories. Its suggested framework changes include a downgrade to Expo 44 or moving to SDK 58; those do not satisfy the selected stable SDK. No forced upgrade or untested overrides were applied. This is an unresolved dependency limitation, separate from sanitizer fixture results.
+## Dependency audit follow-up
+
+Read-only review on **4 October 2026**, using Node 22.23.3 / npm 10.9.9 and the unchanged lockfile:
+
+```text
+npm audit --omit=dev
+npm audit --json
+npm ls decode-uri-component uuid node-forge braces micromatch
+npm audit --omit=dev --json
+```
+
+Both requested audit commands exit 1 because findings remain. `npm audit --omit=dev` reports **56 affected package entries (46 high, 10 moderate)**; the full audit reports **60 (50 high, 10 moderate)**. These totals include advisories propagated through parent packages, rather than 56/60 independent vulnerabilities. There are **four distinct underlying advisories**. `npm ls` exits 0 and confirms the installed versions below. Read-only `npm view` lookups checked published versions, Expo/Router dist-tags and parent dependency constraints; local semver checks confirmed the incompatible patch ranges.
+
+All four advisories are present in npm's production dependency graph. That graph includes Expo's CLI/config/Metro dependencies even though those execute on the development computer. Only `decode-uri-component` is present through app navigation code; the others are development/build/test tooling for this slice.
+
+| Installed package / advisory | Execution classification | Patched version within the current SDK 57 constraints? |
+| --- | --- | --- |
+| `decode-uri-component@0.2.2`, moderate [GHSA-vcc3-ghjq-m6fr](https://github.com/advisories/GHSA-vcc3-ghjq-m6fr): malformed URL decoding can consume excessive CPU | App navigation dependency, via Router / query-string. S0 does not call this decoder directly. | **No.** Published patch `0.5.0` is outside query-string's `^0.2.2`. Router `57.0.24` (current stable / SDK 57 tag) requires query-string `^7.1.3`; `7.1.3` is the newest matching release and retains that decoder constraint. Audit proposes Router `58.0.13`, outside this task. |
+| `node-forge@1.4.0`, high [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv): RSA signature verification issue | Expo CLI and code-signing certificate tooling, not chapter rendering or phone storage | **No published patch.** Registry latest is `1.4.0`, still affected. Both installed parents allow `^1.3.3`, but no patched release exists to select. |
+| `uuid@7.0.3`, moderate [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq): output-buffer bounds in v3/v5/v6 APIs | Xcode project generation tooling. Its inspected call uses `uuid.v4()` without an output buffer, not the affected APIs. App UUIDs use expo-crypto. | **No.** A published patch is `11.1.1`, outside xcode's `^7.0.3`; no compatible patched 7.x release. |
+| `braces@3.0.3`, high [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm): nested-pattern stack exhaustion | Metro file matching and Jest tooling, not the HTML parser or reader | **No published patch.** Registry latest is `3.0.3`, still affected. micromatch allows `^3.0.3`, but no patched release exists to select. |
+| `micromatch@4.0.8` | Metro/Jest tooling; its high audit entry is inherited from braces, with no fifth independent advisory | **No resolving compatible update.** Registry latest is `4.0.8`, retaining braces `^3.0.3`. |
+
+The relevant app-runtime advisory path is:
+
+```text
+stowaway -> expo-router@57.0.24 -> query-string@7.1.3 -> decode-uri-component@0.2.2
+```
+
+Source inspection finds query-string imported by Router's path serialization modules and its vendored React Navigation core. That core's `getStateFromPath` calls `queryString.parse`, which invokes the decoder. The active Router linking configuration supplies its forked `getStateFromPath`, whose query parsing uses URL search parameters instead. This is an unresolved app dependency finding; a reachable exploit through the current S0 screens or an external deep link has **not** been demonstrated. The controlled chapter WebView does not use this decoder. No architecture change or speculative mitigation was introduced.
+
+Representative production-graph paths for the tooling findings:
+
+```text
+stowaway -> expo@57.0.26 -> @expo/cli@57.0.27 -> node-forge@1.4.0
+stowaway -> expo@57.0.26 -> @expo/cli@57.0.27 -> @expo/code-signing-certificates@0.0.6 -> node-forge@1.4.0
+stowaway -> expo@57.0.26 -> @expo/config-plugins@57.0.9 -> xcode@3.0.1 -> uuid@7.0.3
+stowaway -> expo@57.0.26 -> @expo/cli@57.0.27 -> @expo/metro-file-map@57.0.3 -> micromatch@4.0.8 -> braces@3.0.3
+stowaway -> expo@57.0.26 -> @expo/metro@56.0.2 -> metro-file-map@0.84.5 -> micromatch@4.0.8 -> braces@3.0.3
+```
+
+The same micromatch/braces finding also appears in dev paths through `jest -> @jest/core`, `@react-native/jest-preset -> babel-jest -> @jest/transform`, and `@types/jest -> expect -> jest-message-util`. The four affected package entries present only in the full audit are `@types/jest`, `jest-environment-jsdom`, `jest-expo` and `jest-watch-typeahead`; they are propagated tooling findings, not additional phone-runtime advisories.
+
+No obviously safe SDK 57 patch resolves the app dependency finding, so **no dependency or lockfile changes were made**. No audit fix, overrides, SDK downgrade or SDK 58 upgrade was applied. Audit's suggested Expo 44 / Router 58 / Jest 30 framework changes were not executed. These findings remain unresolved and are separate from sanitizer fixture results.
+
+Follow-up checks: `npm run check` passes strict TypeScript, lint and **39 tests / 7 suites**; `npx expo install --check` reports dependencies up to date; `npx expo-doctor@latest` passes **21/21**; `git diff --check` passes. Application code, architecture and package versions remain unchanged.
 
 ## Still unverified
 
-Physical Hermes/parser execution, native SQLite/FileSystem recovery, WKWebView local-file/CSP/network behavior, local-image loading, VoiceOver, selection, reading comfort, background/kill/reopen and actual same-passage restoration are pending [Owen's device checklist](S0_Device_Checklist.md). SDK 57 Expo Go installation is pending. No Mac/iOS simulator, EAS build, paid service, live SpaceBattles request, backend or source policy test was used. Bundled airplane-mode cold start belongs to S2. **S0 has not passed physical-device acceptance.**
+Physical Hermes/parser execution, native SQLite/FileSystem recovery, WKWebView local-file/CSP/network behavior, local-image loading, VoiceOver, selection, reading comfort, background/kill/reopen and actual same-passage restoration are pending [Owen's device checklist](S0_Device_Checklist.md). Installing current App Store Expo Go and the iPhone run are pending. No Mac/iOS simulator, EAS build, paid service, live SpaceBattles request, backend or source policy test was used. Bundled airplane-mode cold start belongs to S2. **S0 has not passed physical-device acceptance.**

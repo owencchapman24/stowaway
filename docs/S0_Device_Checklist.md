@@ -2,11 +2,11 @@
 
 Target reported by Owen: **iPhone 17 Pro**, **iOS 26.7.1 (tentative; confirm in Settings → General → About)**. Expo Go was not installed when implementation began. No physical-device checks have been performed by this session.
 
-Follow the SDK 57 client prerequisite and Windows commands in [README](../README.md). Keep Metro running for this Expo Go functional check. Initial bundle/asset delivery from Metro is development setup; the chapter WebView itself must never load remote content.
+Install or update the current **App Store Expo Go (SDK 57)** and sign it into the same Expo account used by Expo CLI. Follow the Windows commands in [README](../README.md), including `npx.cmd expo login`. Apple Developer membership and `eas go` are not required for this run ([Expo's 3 September update](https://expo.dev/changelog/expo-go-57-login)). Keep Metro running for this Expo Go functional check. Initial bundle/asset delivery from Metro is development setup; the chapter WebView itself must never load remote content.
 
 Record the actual iOS version, Expo Go version/SDK, date, and pass/fail details below. Do not mark S0 accepted until Owen supplies the result.
 
-- [ ] Matching SDK 57 Expo Go opens Stowaway from the QR code on Windows.
+- [ ] Expo CLI and the current App Store Expo Go are signed into the same Expo account; SDK 57 Expo Go opens Stowaway from the QR code on Windows.
 - [ ] Contents has exactly one story and three chapters after reopening repeatedly.
 - [ ] Chapter 1 scrolls for several screens. Headings, emphasis, quote, list, table, scene break and selectable text work.
 - [ ] The blue harbor raster appears. Both spoiler levels open/close. VoiceOver announces and operates summaries and labeled native controls.
