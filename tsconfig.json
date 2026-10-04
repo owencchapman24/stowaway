@@ -3,7 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "types": ["react", "react-native", "jest", "node"],
+    "types": ["expo/types", "react", "react-native", "jest", "node"],
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],

@@ -53,11 +53,11 @@ Initial render waits for local image completion and restores before sending read
 
 ## Files added
 
-44 files; the three original specification/research documents are unchanged.
+43 tracked files; the three original specification/research documents are unchanged. Expo generates an ignored `expo-env.d.ts` locally; compiler types explicitly include `expo/types` so clean checkout checks do not depend on that file.
 
 | Location | Files |
 | --- | --- |
-| Root | `.gitignore`, `.npmrc`, `AGENTS.md`, `README.md`, `app.json`, `eslint.config.js`, `expo-env.d.ts`, `jest.config.js`, `package.json`, `package-lock.json`, `tsconfig.json` |
+| Root | `.gitignore`, `.npmrc`, `AGENTS.md`, `README.md`, `app.json`, `eslint.config.js`, `jest.config.js`, `package.json`, `package-lock.json`, `tsconfig.json` |
 | CI / asset / notes | `.github/workflows/check.yml`, `assets/harbor.png`, `docs/S0_Setup.md`, `docs/S0_Device_Checklist.md` |
 | `src/app/` | `_layout.tsx`, `index.tsx`, `reader.tsx` |
 | `src/domain/` | `identity.ts`, `types.ts` |
