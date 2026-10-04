@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+.tools/
+.scaffold/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+.env*
+!.env.example
+ios/
+android/
+*.ipa
+*.apk
+*.aab
+.DS_Store
