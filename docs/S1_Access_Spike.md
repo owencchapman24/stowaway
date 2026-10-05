@@ -1,6 +1,6 @@
-# S1 access and primary-manifest spike — ready for iPhone testing
+# S1 access and primary-manifest spike — core physical acceptance passed
 
-Status recorded: **5 October 2026, America/New_York**. Branch: `feat/spacebattles-access-spike`, based on `46e8ba2` (S0 merged into main). The [October audit](Stowaway_October_2026_Groundwork_Audit.md) remains the specification. S0 reader/storage behavior and dependency versions are unchanged; Contents gains a development-only diagnostic link.
+Acceptance recorded: **5 October 2026, America/New_York**, from Owen's supplied physical-iPhone results. Branch: `feat/spacebattles-access-spike`, based on `46e8ba2` (S0 merged into main); S1 implementation commit: `0617e73`. The [October audit](Stowaway_October_2026_Groundwork_Audit.md) remains the specification. S0 reader/storage behavior and dependency versions are unchanged; Contents has a development-only diagnostic link.
 
 ## Goal
 
@@ -8,7 +8,7 @@ Test ordinary unauthenticated requests from Owen's actual iPhone, complete disco
 
 The earlier attempt stopped before story requests because the tool returned HTTP 403 for Terms/Site Rules and could not retrieve robots.txt. It produced these two S1 documents and passed the original 39-test S0 suite. That history is preserved in [the source-policy record](S1_Source_Policy.md). The retrieval failure did not establish an iPhone access failure.
 
-Owen subsequently supplied current official policy text and selected A/B/C. The personal spike gate is now cleared on that supplied basis, without re-fetching policy pages. The bounded implementation and desktop probes below are complete. **S1 is not accepted:** actual unauthenticated iPhone access and Owen's complete primary-category comparison remain pending. Stop here for his phone test; no PR, merge, S2 or full importer work is authorized.
+Owen subsequently supplied current official policy text and selected A/B/C. The personal spike gate was cleared on that supplied basis, without re-fetching policy pages. The bounded implementation, desktop probes and Owen's physical Expo Go runs are complete. **CORE S1 PHYSICAL ACCEPTANCE PASSED**, as reported by Owen. His primary-count and ordering/title comparisons are recorded precisely below, including B's spot-check coverage. The acceptance follow-up authorizes bookkeeping, a separate commit, branch push and PR preparation only; no merge, S2 or full importer work is authorized.
 
 ## Scope
 
@@ -102,11 +102,43 @@ node.exe .tools/S1_range.cjs <A URL> <observed range URL> 1
 
 These helpers were manual developer probes only; they are not tracked or invoked by tests/CI. No package installation/update, audit fix or overrides were run for S1.
 
-Final validation: **`npm.cmd run check` passes TypeScript, lint and 98 tests / 11 suites; the entire `--no-cache` suite also passes 98/98**. `git diff --check` and no-index whitespace checks for all 14 untracked S1 files pass. Expo compatibility and Doctor results above remain valid with the unchanged dependency graph; a final iOS Hermes export after the last code correction also passes.
+Implementation validation before commit `0617e73`: **`npm.cmd run check` passed TypeScript, lint and 98 tests / 11 suites; the entire `--no-cache` suite also passed 98/98**. `git diff --check` and no-index whitespace checks for the then-untracked 14 S1 files passed. Expo compatibility and Doctor passed with the unchanged dependency graph; a final iOS Hermes export after the last code correction also passed. These implementation checks are separate from the acceptance-bookkeeping checks recorded below.
 
-A separate sequential diff review covered URL/path/redirect restrictions, native cookie/header handling, primary/category identity, source ordering/completeness, partial failures, representative ID mapping, transient-cache disposal and unchanged S0 persistence. It found and fixed Retry-After handling on redirects and missing-trailing-slash thread input normalization, with tests. Two redirect test doubles initially returned the Location value for every header name; they now model headers by name. No assertions or S0 tests were weakened. The final review found no remaining implementation blocker for the phone test. Changes remain uncommitted on the required branch.
+A separate sequential diff review covered URL/path/redirect restrictions, native cookie/header handling, primary/category identity, source ordering/completeness, partial failures, representative ID mapping, transient-cache disposal and unchanged S0 persistence. It found and fixed Retry-After handling on redirects and missing-trailing-slash thread input normalization, with tests. Two redirect test doubles initially returned the Location value for every header name; they now model headers by name. No assertions or S0 tests were weakened. The implementation was subsequently committed as `0617e73`; the physical acceptance update is a separate commit.
 
-## Physical-iPhone checklist — all pending
+## Physical iPhone acceptance — Owen's reported results
+
+**CORE S1 PHYSICAL ACCEPTANCE PASSED.** All A/B/C diagnostics ran through Expo Go on Owen's physical iPhone. This is user-reported device evidence, not an agent-operated phone run or independent packet inspection. The previously reported device is an iPhone 17 Pro; exact iOS and Expo Go versions were not separately supplied with these results.
+
+Every run reported **Access: public source documents parsed**, **Manifest: COMPLETE**, **Primary source ID: 1**, no duplicate post IDs, and successful first and last sample mapping.
+
+| Story | Unique entries | Index/range documents | First post ID | Last post ID | First / last samples |
+| --- | ---: | ---: | --- | --- | --- |
+| A | 25 | 1 | 111923315 | 124318183 | Both mapped |
+| B | 421 | 17 | 88726515 | 123429160 | Both mapped |
+| C | 34 | 2 | 96961304 | 112431089 | Both mapped |
+
+Owen's manual SpaceBattles comparison confirmed:
+
+- **A:** the source reports 25 primary Threadmarks; visible ordering and titles match Stowaway.
+- **B:** Statistics reports 421 primary threadmarks. Early ordering/titles match; mid-story and later entries were spot-checked and match. The source ends with **Epilogue III (final)**, **New Story Notice**, **Sequel Announcement**, matching Stowaway entries **419–421**. This records spot checks, not an independently audited comparison of every one of the 421 rows. Visible source UI pagination such as “1 of 205” is a different display/traversal mechanism from Stowaway's 17 index/range documents and does not contradict the matching primary count.
+- **C:** the source reports 34 primary Threadmarks; visible first/middle/final titles and ordering match Stowaway.
+
+After all three diagnostics Owen returned to normal Contents. It still contained only **The Lantern Cartographer**, its **three synthetic S0 chapters**, and existing S0 reading progress. None of the three real stories appeared. S1 remained explicitly development-only. No login, browser-session copying, authentication, proxying or challenge workaround was used for these runs.
+
+The reported core checks are recorded as passed:
+
+- [x] Ordinary unauthenticated iPhone public access for A/B/C.
+- [x] Expected public source documents, with no login/challenge/interstitial reported.
+- [x] COMPLETE primary manifests with 25/421/34 unique entries and stable numeric endpoint IDs.
+- [x] Matching primary source counts and the ordering/title comparisons documented above.
+- [x] First and last representative content mapped to the discovered post IDs.
+- [x] Contents after A/B/C retains only the synthetic library and existing S0 progress.
+- [x] No authentication, copied-browser session, bypass or proxy workaround used.
+
+## Diagnostic run instructions — retained for regression checks
+
+These steps describe future reproduction, not unfinished core acceptance work.
 
 On Windows, remain on `feat/spacebattles-access-spike`. Use Node 22 LTS >=22.13 or Node 24 LTS >=24.3. If the supported portable toolchain already installed here is needed, prepend it for this PowerShell session:
 
@@ -128,24 +160,22 @@ Install/update **SDK 57 App Store Expo Go** on the iPhone and sign in to the sam
 6. Run A once more, return to Contents, and leave/reopen the diagnostic screen. Results reset on a new screen/run. The normal library still contains exactly the original three synthetic chapters, and S0 saved passages remain intact. No real story is added or retained for normal reading. Optionally cancel a run/leave mid-run: no further GET should start after cancellation is observed; an already waiting cooldown may need to finish before a new run.
 7. If any response is blocked, login/challenge/interstitial or a typed access failure, **stop that story's run** and report the code/HTTP status/request count. Do not retry through alternate endpoints, copy cookies, log in to SpaceBattles, spoof a browser, use a proxy or solve a challenge for Stowaway. Ordinary Safari viewing is only for manual comparison, not for supplying a session.
 
-For **each A/B/C**, all remain pending until Owen reports results:
-
-- [ ] Ordinary unauthenticated iPhone request succeeds.
-- [ ] No login, challenge or interstitial is returned, including with HTTP 200.
-- [ ] The complete primary Threadmarks manifest is retrieved.
-- [ ] Owen compares unique count, source order and post IDs with the site's own primary-category UI.
-- [ ] Minimal representative content maps to the discovered post IDs.
-- [ ] Repeated runs/returning to Contents leave only the synthetic library and preserve S0 progress.
-- [ ] No bypass, proxy, copied-cookie or authentication workaround is used.
-
-Please supply the actual iPhone/iOS/Expo Go versions, each example's classification/count/first/last/sample outcome, and whether the full primary source order matched. Titles/IDs/status are sufficient; do not send prose, cookies or sessions. A screenshot of diagnostic metadata can help.
-
 ## Failures / limitations
 
-Still unverified: native iPhone public access, actual on-wire User-Agent/cookie/redirect/cache behavior, full source-count/order comparison by Owen, and changing source structure during a traversal. Parser fixtures plus desktop success do not establish these. Actual range HTML was exercised once on desktop; JSON/nested/error ranges and challenge/retry behavior were tested with deterministic fixtures, not induced on the site. No native physical result is invented.
+The result is personal technical feasibility for the tested current source HTML and **primary Threadmarks category only**. Source HTML may change later. No full story importer, real-body persistence or S2 installation/offline-cold-start work is included. Native wire-level header/cookie/cache inspection was not separately performed; successful public access does not establish those packet-level details. Exact iOS/Expo Go versions remain unconfirmed. Manual comparison coverage is stated above and does not claim an exhaustive independent 421-row ID audit. Actual range HTML was exercised once on desktop; JSON/nested/error ranges and challenge/retry behavior were tested with deterministic fixtures, not induced on the site.
 
 The supplied policy identifies neither explicit automated-reader prohibition nor authorization. Its narrow personal engineering gate is cleared; public/commercial deployment, App Store authorization and copyright/reuse remain unresolved separately. Generic robots allowance is not legal permission; Yandex's one-second crawl delay is not applied to Stowaway.
 
 ## S1 result
 
-No full story was downloaded; only manifests and minimum representative public pages were retrieved. No real story was persisted into the normal library. No authentication, browser cookies, proxy, anti-bot/challenge bypass or blocked-crawler/browser impersonation was added. No live tests/CI requests, new dependencies, PR, merge or S2 work exist. **Ready for Owen's phone test; S1 acceptance pending.**
+**CORE S1 PHYSICAL ACCEPTANCE PASSED, as reported by Owen.** Ordinary unauthenticated requests from the physical iPhone retrieved public documents, completely traversed primary manifests including the 421-entry case, preserved stable numeric IDs/source order with the reported manual comparisons, and mapped representative discovered IDs to actual post content.
+
+No full story was downloaded; only manifests and minimum representative public pages were retrieved. No real story was persisted into the normal library. No authentication, browser cookies, proxy, anti-bot/challenge bypass or blocked-crawler/browser impersonation was added. No live tests/CI requests or new dependencies were added. PR preparation is authorized by the acceptance follow-up; **no PR merge, full importer or S2 work is authorized or begun**. Public/commercial, App Store and copyright/distribution questions remain separate unresolved gates.
+
+## Acceptance-bookkeeping validation — 5 October 2026
+
+The follow-up began with a clean branch at `0617e73`. Changes are limited to acceptance documentation, scope/status notes and removal of the stale pending-acceptance sentence from Contents. Networking, parsing, storage, dependencies and tests are unchanged. The S0 checklist only gains a link to this subsequent acceptance record; its pending diagnostics remain pending.
+
+Using Node 22.23.3 / npm 10.9.9, **`npm.cmd run check` passes strict TypeScript, lint and 98 tests / 11 suites**; **`npx.cmd expo install --check`** reports dependencies up to date; **`npx.cmd expo-doctor@latest` passes 21/21**; **`git diff --check` passes**. A separate sequential diff review confirms that the recorded manual comparison coverage matches Owen's supplied results and the policy conclusion remains narrow. No new live SpaceBattles requests were made in this follow-up. iOS export/no-cache results earlier in this document are implementation checks, not reruns for this documentation/copy update.
+
+GitHub CLI is unavailable in this environment. The prepared PR title is **S1: SpaceBattles access and threadmark discovery spike**; its body is saved outside Git in ignored `.tools/S1_PR_Body.md` for manual creation against `main`. No PR merge is permitted by this task.

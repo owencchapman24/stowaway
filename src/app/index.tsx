@@ -32,7 +32,7 @@ export default function Contents() {
     {chapters.map((chapter) => <View key={chapter.id} style={styles.chapter}>
       <Control label={`Read ${chapter.title}`} text={chapter.title} onPress={() => open(chapter.id)} />
     </View>)}
-    <Text style={styles.note}>Positions and reading settings stay on this device. Physical iPhone acceptance is pending.</Text>
+    <Text style={styles.note}>Positions and reading settings stay on this device.</Text>
   </ScrollView></SafeAreaView>;
 }
 

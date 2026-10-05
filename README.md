@@ -1,6 +1,6 @@
 # Stowaway
 
-An offline iPhone reader prototype. **S0:** one original synthetic three-chapter story, SQLite persistence, sanitized rich HTML, a controlled WebView, chapter navigation, light/dark themes and adjustable text size. **S1:** a bounded development-only SpaceBattles access/primary-manifest diagnostic, ready for Owen's iPhone test; acceptance is pending.
+An offline iPhone reader prototype. **S0:** one original synthetic three-chapter story, SQLite persistence, sanitized rich HTML, a controlled WebView, chapter navigation, light/dark themes and adjustable text size. **S1:** a bounded development-only SpaceBattles access/primary-manifest diagnostic. **Core S0 and core S1 physical acceptance passed**, as reported by Owen; full importing and S2 have not begun.
 
 The [October audit](docs/Stowaway_October_2026_Groundwork_Audit.md) controls implementation. September reports in `docs/research/` are background. S1 networking is restricted to public primary indexes and minimal representative samples. No importer, backend, accounts, sync or download manager is implemented.
 
@@ -23,4 +23,4 @@ The commands above run Stowaway in the current App Store Expo Go. Select a chapt
 
 See [setup and implementation notes](docs/S0_Setup.md) for versions, architecture, verification and limitations.
 
-For S1, open **S1 diagnostic (dev only)** from Contents, paste one of Owen's selected public thread URLs, and tap **Run S1 diagnostic**. Results stay in memory; real stories never enter the fixture library. Follow the [S1 record and A/B/C phone checklist](docs/S1_Access_Spike.md) and [source-policy review](docs/S1_Source_Policy.md). Stop on any blocked/login/challenge result. Automated tests and CI make no live source requests.
+For S1, open **S1 diagnostic (dev only)** from Contents, paste one of Owen's selected public thread URLs, and tap **Run S1 diagnostic**. Results stay in memory; real stories never enter the fixture library. Owen reports successful physical Expo Go runs for A/B/C with 25/421/34 primary entries, matching source counts and the reported ordering/title comparisons, successful first/last samples, and intact synthetic Contents/progress afterward. The [S1 acceptance record](docs/S1_Access_Spike.md) states the comparison extent and remaining limitations; the [source-policy review](docs/S1_Source_Policy.md) still clears only a personal technical spike, not public/commercial or App Store authorization. Native wire-level inspection remains unperformed. Stop on any future blocked/login/challenge result. Automated tests and CI make no live source requests; full importing and S2 require a new scope instruction.
