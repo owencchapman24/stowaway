@@ -25,13 +25,14 @@ export default function Contents() {
     <Text style={styles.title}>{fixtureStory.title}</Text>
     <Text style={styles.note}>Original synthetic story · 3 offline chapters</Text>
     <Text style={styles.note}>S0 fixture reader. No live imports.</Text>
+    {__DEV__ && <Control label="Open S1 development diagnostic" text="S1 diagnostic (dev only)" onPress={() => router.push('/s1')} />}
     {imageWarning && <Text accessibilityRole="alert">{imageWarning}</Text>}
     {error && <Text accessibilityRole="alert">{error}</Text>}
     {lastChapter && <Control label="Resume last saved chapter" text="Resume reading" onPress={() => open(lastChapter)} />}
     {chapters.map((chapter) => <View key={chapter.id} style={styles.chapter}>
       <Control label={`Read ${chapter.title}`} text={chapter.title} onPress={() => open(chapter.id)} />
     </View>)}
-    <Text style={styles.note}>Positions and reading settings stay on this device. Physical iPhone acceptance is pending.</Text>
+    <Text style={styles.note}>Positions and reading settings stay on this device.</Text>
   </ScrollView></SafeAreaView>;
 }
 

@@ -1,4 +1,4 @@
-export function storyId(source: 'fixture', threadId: string): string {
+export function storyId(source: 'fixture' | 'spacebattles', threadId: string): string {
   return `${source}:thread:${numericId(threadId)}`;
 }
 
