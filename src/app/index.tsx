@@ -26,6 +26,7 @@ export default function Contents() {
     <Text style={styles.note}>Original synthetic story · 3 offline chapters</Text>
     <Text style={styles.note}>S0 fixture reader. No live imports.</Text>
     {__DEV__ && <Control label="Open S1 development diagnostic" text="S1 diagnostic (dev only)" onPress={() => router.push('/s1')} />}
+    {__DEV__ && <Control label="Open S2A recovery diagnostic" text="S2A recovery diagnostic (dev only)" onPress={() => router.push('/s2a')} />}
     {imageWarning && <Text accessibilityRole="alert">{imageWarning}</Text>}
     {error && <Text accessibilityRole="alert">{error}</Text>}
     {lastChapter && <Control label="Resume last saved chapter" text="Resume reading" onPress={() => open(lastChapter)} />}
