@@ -2,11 +2,11 @@
 
 Implementation date: 5 October 2026. Starting branch was clean `feat/persistence-installation-spike` at **a68f197**, the merged S1 baseline (PR #2). Clean `main` was fetched/pulled without changes; implementation branch is **feat/persistence-recovery-spike**. The older branch was preserved. The [October audit](Stowaway_October_2026_Groundwork_Audit.md) remains the architecture specification.
 
-**Local implementation complete; physical S2A acceptance pending Owen's results.** Core S0/S1 acceptance remains the previously reported evidence. No older pending device checks are newly passed.
+**CORE S2A PHYSICAL ACCEPTANCE PASSED.** Acceptance recorded **5 October 2026, America/New_York**, from Owen's supplied physical-iPhone report for implementation `2a99356` on `feat/persistence-recovery-spike`. Testing used Expo Go and Metro with synthetic/disposable S2A data only. This is user-reported device evidence, not an agent-operated phone run. Core S0/S1 acceptance remains the previously reported evidence; unrelated pending diagnostics retain their status.
 
 ## Milestone split and scope
 
-Owen deliberately split the audit's original S2 into **S2A recovery/resilience now** and **S2B independent installation/offline cold start later**. Signing, Mac access and an installation workflow must not block this local recovery work. Passing S2A will not mean full original S2 passed. After phone acceptance the appropriate status is **S2A accepted; S2B deferred/pending**.
+Owen deliberately split the audit's original S2 into **S2A recovery/resilience now** and **S2B independent installation/offline cold start later**. Signing, Mac access and an installation workflow must not block this local recovery work. Current status is **S2A accepted; S2B deferred/pending**. Passing S2A does not mean full original S2 passed.
 
 S2A uses only the existing original synthetic fixture and bundled raster. It adds explicit development diagnostics and real host SQLite/filesystem tests. There were zero live SpaceBattles requests. S1 transport/parsing/diagnostic code is unchanged. No real-story importer, download manager, reconciliation, new sites, accounts, sync, backend, notifications or product styling was added. SDK 57, package.json, package-lock.json and app.json are unchanged; no dependencies were added.
 
@@ -47,7 +47,7 @@ Orphan cleanup removes only direct UUID PNG files under S2A assets, excluding th
 | Commit failure | Host driver's injected exception after all work, before COMMIT | All prior content/locator retained; queue accepts later writes |
 | Commit/retry | Both UPDATEs complete in one exclusive transaction | Revision B fields move together; identities remain; 1 story/3 chapters |
 | Normal reopen | Close/reopen without seed/repair | Correct committed A after failure or B after success |
-| Real text kill | Await an unresolved gate inside the exclusive transaction after both UPDATEs | Phone must prove previous committed state survives process death |
+| Real text kill | Await an unresolved gate inside the exclusive transaction after both UPDATEs | Owen reports previous committed state survived process death; see physical results below |
 | Corrupt stage | Write deliberately truncated bundled bytes; run real image validator | No new asset reference; old reference remains |
 | Reference failure | Completed/validated new file; throw after reference SQL before commit | Old reference intact; new file unreferenced |
 | Image retry/commit | Fresh validated file, then reference transaction | One logical harbor asset row, completed valid reference |
@@ -86,17 +86,70 @@ Initial new assertions were corrected for the real placeholder wording, stored c
 
 ## Physical acceptance and limits
 
-All [S2A phone checks](S2A_Device_Checklist.md) are **pending** until Owen supplies results. Host SQLite/filesystem evidence cannot prove iOS durability, Expo Go lifecycle or WKWebView behavior. The local export is compilation evidence only. No iPhone was operated by the agent. Actual power-loss/storage hardware behavior is outside this diagnostic; image corruption is deliberately injected into disposable data. Known limits of same-hash block restoration/progression fallback remain unchanged.
+**CORE S2A PHYSICAL ACCEPTANCE PASSED**, as reported by Owen. The previously reported device is an iPhone 17 Pro; exact iOS and Expo Go versions remain unconfirmed. Initial disposable state was revision A, **1 story / 3 chapters / 1 asset**, valid referenced image, saved locator with matching hash and dark/22 preferences. Owen then saved a recognizable passage.
 
-S2A uses Expo Go/Metro for relaunch. Initial bundled-asset materialization may use Metro in Expo Go; regeneration reads already accepted local files and never calls bundle materialization or a source client. It does not prove a standalone installed app can cold-launch with Metro unavailable. Prior S0 VoiceOver/direct WebView network/script checks and S1 wire-level checks remain at their existing status.
+### Text transactions — reported passed
+
+| Physical scenario | Owen's reported result |
+| --- | --- |
+| Injected JS failure before write | Revision A, hash and locator unchanged; counts 1/3/1; image valid |
+| Injected JS failure between SQL writes | Complete rollback, no partial metadata update; revision A/hash/locator intact; counts 1/3/1 |
+| Real process kill before commit | Exact **READY TO FORCE-QUIT BEFORE COMMIT** banner reached; Expo Go swiped away from the iOS app switcher. Relaunch inspection before repair/retry/reset showed committed A, previous hash/locator, counts 1/3/1 and valid image; no partial B |
+| Explicit retry/commit B | Revision B and a new hash committed; counts 1/3/1; no duplicate logical rows |
+| Locator version handling | Old A locator hash no longer matched B; diagnostic correctly reported progression fallback only, with no false exact passage match. Reading B saved a new matching B locator |
+| Real kill after successful B commit | Force-quit/relaunch preserved B and its valid new locator; counts 1/3/1; image valid |
+
+Injected exceptions/rollback, a real open-transaction process kill and a real post-commit kill are distinct evidence. Optional JS gate-release controls and normal close/reopen are not substituted for either real kill.
+
+### Images/files — reported passed
+
+| Physical scenario | Owen's reported result |
+| --- | --- |
+| Injected partial/corrupt stage | Rejected; active reference stayed unchanged/valid; canonical text/hash/locator intact; only an unreferenced test file remained. This is truncated-byte injection, not a mid-syscall kill |
+| Valid stage, injected DB reference failure | Completed new file remained an orphan; old active reference valid; no duplicate logical asset row; text/locator intact |
+| Real kill after validated staging, before DB reference | Exact **READY TO FORCE-QUIT: VALIDATED IMAGE, BEFORE DB REFERENCE** banner reached, then Expo Go force-quit. Relaunch inspection before repair/retry retained the old valid reference, new completed unreferenced file, revision B and valid locator; counts 1/3/1 |
+| Fresh validated image commit/retry | Explicit retry committed a valid new reference; logical asset count stayed exactly 1; repeats safe; prior files became filesystem orphans only |
+| Orphan cleanup | Only eligible unreferenced S2A files removed; active image valid; orphan count 0; counts 1/3/1; B and locator intact |
+| Missing referenced image | Diagnostic reported missing; DB/story/chapter/locator intact; readable chapter with **[Local image unavailable: ...]**; no automatic destructive repair; explicit retry restored a valid image |
+| Corrupt referenced image | Diagnostic reported corrupt; reader remained usable with readable text/placeholder; explicit retry restored a valid image |
+
+### Render regeneration and normal-library isolation — reported passed
+
+Owen opened/read S2A, saved a recognizable passage/preferences, removed disposable render directories and observed the removal report. Canonical B/hash/locator/image state remained intact. Reopening successfully rebuilt the reader from canonical local SQLite/filesystem state; saved passage/preferences remained usable and no source request was required. **The optional already-running Wi-Fi/cellular-disabled regeneration check was not separately supplied and remains unverified.** No standalone offline launch is inferred.
+
+After all destructive S2A experiments, Normal Contents still held **The Lantern Cartographer** and exactly three normal synthetic chapters. Normal reading progress/settings were preserved, S1 remained separate/development-only, no real SpaceBattles story appeared, and destructive test state stayed isolated from normal storage.
+
+The demonstrated result is that, on Owen's physical iPhone, Stowaway preserves last committed text and reading state through failed/incomplete transactions and real process kills, separates image staging from authoritative DB references, safely degrades missing/corrupt images, cleans unreferenced test files without touching active content and regenerates disposable reader files from canonical local state. See the [acceptance checklist](S2A_Device_Checklist.md) for reported passes and the remaining unreported checks.
+
+Host SQLite/filesystem tests and the local export remain separate automated/compilation evidence. No iPhone was operated by the agent. Actual power-loss/storage hardware behavior is outside this diagnostic. Same-hash block restoration/progression fallback limits remain unchanged. Real-story importing has not begun.
+
+S2A used Expo Go/Metro for relaunch. Initial bundled-asset materialization may use Metro in Expo Go; regeneration reads already accepted local files and never calls bundle materialization or a source client. S2A does **not** prove independently installed Stowaway, Metro-free cold start or first launch in airplane mode. Prior S0 VoiceOver/direct WebView network/script checks and S1 wire-level checks remain at their existing status.
 
 ## Deferred S2B — independent installation/offline cold start
 
-S2B must still prove Stowaway installed independently of Expo Go, JavaScript/assets bundled locally, Metro unavailable, Wi-Fi/cellular disabled, a successful cold launch, and saved passage/preferences/images surviving force-quit/offline relaunch. **S2A passing does not mean full original S2 passed.**
+The remaining original-S2 requirement is independently installed Stowaway with bundled JavaScript/assets, **no Expo Go, no Metro**, Wi-Fi/cellular disabled, successful cold launch and saved passage/preferences/images surviving offline force-quit/relaunch. **S2A accepted; S2B deferred/pending. S2A passing does not mean full original S2 passed.**
 
 Two future routes remain unchosen:
 
 - **Free:** borrow/use a Mac with Xcode and a free Apple Personal Team for temporary personal-device signing. Apple's [membership comparison](https://developer.apple.com/support/compare-memberships/) documents free on-device personal testing and Personal Team limitations.
 - **Paid:** Apple Developer Program membership plus the appropriate EAS/Apple signing workflow when warranted.
 
-Defer S2B until Mac/Xcode Personal Team access or a membership/EAS signing route is worthwhile, a persistent personal Stowaway install is needed, or TestFlight/external testing becomes relevant. No route was configured or executed here: no EAS project/IDs/ownership, Apple signing/bundle registration/device registration/certificates/profiles, membership purchase, Mac/Xcode workflow, dev-client, eas.json, cloud build/upload, TestFlight or standalone preview build. No PR/merge is authorized by this implementation task; stop after branch commit/push, ready for Owen's S2A phone diagnostic.
+Defer S2B until Mac/Xcode Personal Team access or a membership/EAS signing route is worthwhile, a persistent personal Stowaway install is needed, or TestFlight/external testing becomes relevant. No route was configured or executed here: no EAS project/IDs/ownership, Apple signing/bundle registration/device registration/certificates/profiles, membership purchase, Mac/Xcode workflow, dev-client, eas.json, cloud build/upload, TestFlight or standalone preview build. The acceptance follow-up authorizes only bookkeeping/minor stale-copy cleanup, a separate acceptance commit, branch push and PR preparation against main. No merge, importer or S2B work.
+
+## Acceptance-bookkeeping validation — 5 October 2026
+
+This follow-up began on clean `feat/persistence-recovery-spike` at **2a99356**, with the expected `owencchapman24/stowaway` origin. Changes are limited to `README.md`, `AGENTS.md`, the two S2A records and a narrow subsequent-S2A cross-reference in the S0 checklist. Contents copy was inspected and remains accurate; the useful S2A diagnostic is retained unchanged. No recovery/storage/reader architecture, source networking, tests, dependencies or lockfile changes were made.
+
+Using system Node **22.23.3** / npm **10.9.9**:
+
+```text
+npm.cmd run check                 Strict TypeScript + lint + 117 tests / 13 suites passed
+npx.cmd expo install --check       Dependencies are up to date
+npx.cmd expo-doctor@latest         21/21 checks passed
+npx.cmd expo export --platform ios Local iOS Hermes bundle + harbor.png export passed
+git diff --check                   Passed
+```
+
+A separate sequential diff review matched each recorded pass to Owen's supplied report. Exact client versions, optional network-disabled regeneration and other unreported sequences remain unverified; unrelated S0/S1 pending checks were not marked passed. No live SpaceBattles request was made. The local export remains compilation evidence, not standalone installation acceptance. Node's experimental host SQLite warning and Metro's color-environment warning are informational.
+
+GitHub CLI is unavailable on PATH and in its standard installation locations. PR title: **S2A: Persistence and recovery spike**. The prepared body is saved outside tracked Git in ignored `.tools/S2A_PR_Body.md`. For manual creation, open the [main-to-S2A comparison](https://github.com/owencchapman24/stowaway/compare/main...feat/persistence-recovery-spike?expand=1), confirm base `main` / compare `feat/persistence-recovery-spike`, paste that title/body and click **Create pull request**. No PR was created by this fallback and no merge is authorized.

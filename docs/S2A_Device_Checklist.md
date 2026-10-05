@@ -1,8 +1,66 @@
-# S2A physical iPhone checklist — pending
+# S2A physical iPhone checklist — core acceptance passed
 
-**No physical S2A result has been reported.** This checklist uses Expo Go and Metro to test local recovery. It does not test S2B standalone installation/offline cold start. Device previously reported: iPhone 17 Pro; record the actual iOS version and Expo Go version when testing. The earlier approximate iOS value is not verified.
+**CORE S2A PHYSICAL ACCEPTANCE PASSED.** Acceptance recorded **5 October 2026, America/New_York**, from Owen's supplied physical-iPhone report for implementation **2a99356** on `feat/persistence-recovery-spike`. Testing used Expo Go and Metro with synthetic/disposable S2A data only. The previously reported device is an iPhone 17 Pro; **exact iOS and Expo Go versions remain unconfirmed**. These are Owen's user-reported results, not an agent-operated phone run or independent device inspection.
 
-## Start on Windows and preserve a normal-library baseline
+**S2A accepted; S2B deferred/pending.** This does not prove independently installed Stowaway, Metro-free cold start or first launch in airplane mode. Real-story importing has not begun. Unrelated pending S0/S1 checks retain their existing status.
+
+## Baseline — reported passed
+
+- [x] Disposable S2A fixture initialized as revision A, **1 story / 3 chapters / 1 asset**, valid image, saved locator, matching content hash and **dark/22** baseline preferences.
+- [x] Owen saved a recognizable reading position before interruption testing.
+
+## Text transactions — reported passed
+
+- [x] **Injected JS failure before write:** revision A/hash/locator unchanged, counts 1/3/1 and image valid.
+- [x] **Injected JS failure between SQL writes:** complete rollback, no partial metadata update, revision A/hash/locator intact and counts 1/3/1.
+- [x] **Real process kill before commit:** exact **READY TO FORCE-QUIT BEFORE COMMIT** banner reached; Owen swiped Expo Go away from the iOS app switcher. After relaunch, inspection **before repair/retry/reset** retained committed A, previous hash/locator, counts 1/3/1 and valid image. No partial B appeared.
+- [x] **Explicit retry/commit revision B:** B committed with a new hash, counts 1/3/1 and no duplicate logical rows.
+- [x] **Versioned locator handling:** old A locator hash no longer matched B; diagnostic correctly reported progression fallback only, without claiming an exact passage match. Reading B saved a new matching B locator.
+- [x] **Real process kill after successful B commit:** force-quit/relaunch preserved B, its valid new locator, counts 1/3/1 and valid image.
+
+Injected exceptions, real before-commit process death and real after-completed-commit process death are separate evidence. A caught exception or optional JS checkpoint-release control is not a process-kill test.
+
+## Images/files — reported passed
+
+- [x] **Injected partial/corrupt stage:** rejected; active reference unchanged/valid, canonical text/hash/locator intact, with only an unreferenced test file left. This is truncated-byte injection, not proof of an iOS mid-syscall kill.
+- [x] **Valid staged file + injected DB reference failure:** new file completed but remained orphaned; old active reference valid, no duplicate logical asset row and text/locator intact.
+- [x] **Real process kill after validated staging, before DB reference:** exact **READY TO FORCE-QUIT: VALIDATED IMAGE, BEFORE DB REFERENCE** banner reached, then Expo Go force-quit. Relaunch inspection **before repair/retry** retained the old active valid reference, new completed unreferenced image, intact B, valid locator and counts 1/3/1.
+- [x] **Fresh validated image commit/retry:** explicit retry committed a valid new reference; logical asset count remained exactly 1, repeats safe, prior files became filesystem orphans only.
+- [x] **Orphan cleanup:** only eligible unreferenced S2A files removed; active image remained valid, orphan count returned to 0, counts 1/3/1 and B/locator intact.
+- [x] **Missing referenced image:** diagnostic reported missing; DB/story/chapter/locator intact; reader opened with readable text and **[Local image unavailable: ...]**. No automatic destructive repair; explicit retry restored a valid image.
+- [x] **Corrupt referenced image:** diagnostic reported corrupt; reader remained usable with readable text/placeholder; explicit retry restored a valid image.
+
+## Disposable render recovery — reported passed
+
+- [x] Owen opened/read S2A and saved a recognizable passage/preferences, then removed disposable render directories; the diagnostic reported removal.
+- [x] Canonical revision B/hash/locator/image state remained intact.
+- [x] Reopening/regeneration rebuilt the reader from canonical local SQLite/filesystem state, preserved usable passage/preferences and required **no source request**.
+
+The optional already-running network-disabled regeneration check was not separately supplied. No independent offline cold launch is inferred from this regeneration result.
+
+## Normal-library isolation — reported passed
+
+- [x] After all destructive S2A experiments, Normal Contents still held **The Lantern Cartographer** and exactly **three normal synthetic chapters**.
+- [x] Existing normal reading progress and settings were preserved.
+- [x] S1 remained separate/development-only; no real SpaceBattles story appeared.
+- [x] Destructive S2A state stayed isolated from normal storage.
+
+On Owen's physical iPhone, Stowaway preserved last committed text/reading state through failed/incomplete transactions and real process kills, separated image staging from authoritative DB references, safely degraded missing/corrupt images, cleaned unreferenced test files without touching active content and regenerated disposable reader files from canonical local state.
+
+## Not separately reported / deferred
+
+- [ ] Confirm actual iOS and Expo Go versions.
+- [ ] Optional **Close/reopen normally (not a kill)** control on the phone. Host close/reopen integration evidence exists; this separate manual control was not specified in Owen's supplied report.
+- [ ] Optional regeneration with Wi-Fi/cellular explicitly disabled in an already-running Expo Go session. No source request was required, but network-disabled conditions were not separately supplied.
+- [ ] Combined repeat of render-directory deletion/regeneration with a deliberately missing referenced image. Missing-image readability and render regeneration passed separately; this combined repeat was not separately supplied.
+- [ ] Optional explicit S2A reset followed by another normal-library baseline comparison. Normal-library isolation after the reported destructive experiments passed; this particular optional sequence was not separately supplied.
+- [ ] **Deferred S2B:** independently installed Stowaway with bundled JS/assets, no Expo Go/Metro, phone offline, successful cold launch and passage/preferences/images surviving offline force-quit/relaunch.
+
+These unreported optional checks do not revoke core S2A acceptance and are not documented as passes. Previous S0 VoiceOver/direct WebView script/network checks and S1 wire-level checks remain at their recorded status. Hardware power-loss durability and killing an image write mid-syscall are not established here.
+
+## Repeating the regression diagnostic
+
+The development-only S2A diagnostic remains available for review/merge and regression work. See [implementation boundaries and isolation rules](S2A_Persistence_Recovery.md).
 
 ```powershell
 cd C:\Users\ocac0\Documents\GitHub\stowaway
@@ -12,55 +70,10 @@ npx.cmd expo login
 npm.cmd start
 ```
 
-Use the current App Store Expo Go supporting SDK 57. Sign CLI and Expo Go into the same Expo account. Keep Windows and iPhone on the same Wi-Fi, allow Node through Windows Firewall on the private network, allow Expo Go local-network access, then scan the terminal QR with the iPhone Camera. No Apple Developer membership, Xcode, EAS project or build is required for S2A. Do not uninstall Expo Go or clear its app data.
+Use the current SDK 57 App Store Expo Go, logged into the same Expo account as CLI, with Metro available. Keep Windows/iPhone on the same Wi-Fi, allow Node through the private-network firewall, allow Expo Go local-network access and scan the terminal QR. No EAS/Apple build/signing or paid membership is required for this diagnostic.
 
-Before diagnostics, open normal Contents: confirm the original synthetic story has three chapters. Save/remember a recognizable normal passage, expanded spoilers and chosen font/theme, then return to Contents. Record these as the isolation baseline. Do not run S1 or paste a SpaceBattles URL during S2A.
+Record the normal-library passage/settings before destructive experiments. From Contents open **S2A recovery diagnostic (dev only)** and **inspect before initialization, repair, retry or reset**, especially after every relaunch. Initialize only absent test data; restarting an experiment requires explicit two-action **Reset S2A test data only** after inspection. Read/save a passage through **Read/regenerate S2A chapter** and return via its **Contents** button.
 
-Tap **S2A recovery diagnostic (dev only)**. Opening it performs no S2A persistence action. Tap **Inspect persisted S2A state (no repair)** first on every relaunch. Never initialize/reset/retry first: that could hide a recovery failure. If no S2A DB exists, tap **Initialize disposable S2A fixture**. If deliberately restarting an existing experiment, inspect and record it first, then tap **Reset S2A test data only** and its **CONFIRM** button, then initialize.
+For each real kill, wait for the exact READY banner, swipe Expo Go away in the iOS app switcher without pressing a release button, relaunch through Metro and inspect first. Backgrounding, reload/Fast Refresh, JS rollback and normal close/reopen are not substitute kills. Do not edit code while armed. Use the explicit image/retry/cleanup/render controls only against disposable S2A resources; compare normal Contents afterward.
 
-Record revision A/hash, 1 story / 3 chapters / 1 asset, locator and valid image/reference. Default test settings are dark/22 and a nonzero baseline locator. Tap **Read/regenerate S2A chapter**, pick a memorable passage (the nested copper-cup spoiler is useful), change font/theme if desired, then tap **Contents** in that reader to return to diagnostics. It returns to S2A, not normal Contents. Inspect and record the saved locator/settings before each interruption.
-
-## Text: exceptions, real kill and retry
-
-- [ ] **Inject JS failure before write**: inspect. Revision/hash/locator must be unchanged.
-- [ ] **Inject JS failure between SQL writes**: inspect. All committed content and locator must be unchanged; no partially updated metadata. These are caught exceptions/rollback tests, not process kills.
-- [ ] **Close/reopen normally (not a kill)**: old committed state remains. This is a normal close/reopen test only.
-- [ ] **Arm real force-quit before commit**. Wait for the pinned yellow **READY TO FORCE-QUIT BEFORE COMMIT** banner. If that exact banner never appears, report failure; do not describe the run as a checkpoint kill.
-- [ ] Without pressing a release button, open the iOS app switcher (swipe up from the bottom and pause), then swipe **Expo Go** up/off the screen. Backgrounding alone is not force-quit. Do not reload, Fast Refresh or change code while armed.
-- [ ] Relaunch Stowaway through Expo Go/Metro, enter S2A and **inspect before repair/retry/reset/initialization**. Record boundary marker, revision/hash, locator and counts. The last committed revision A and saved locator should survive; the marker should describe the armed checkpoint. Read S2A again to verify the same passage/spoilers/settings remain. Do not modify the text before recording the result.
-- [ ] Tap **Commit/retry revision B**, then inspect. Revision B/new hash appears, with 1 story / 3 chapters / 1 asset. Repeating this retry creates no duplicate logical rows.
-- [ ] Before any new reading gesture, the old locator still has revision A's hash. Read revision B: the existing reader should use progression fallback, not claim exact passage matching across changed content. Reading there can then save a valid revision-B locator.
-- [ ] Return to diagnostic, inspect committed revision B/locator, force-quit after the operation says **Text commit completed: revision B**, relaunch and inspect first. Revision B and the last completed locator remain. This is a separate **after-commit** kill.
-
-The optional release buttons test JS commit/rollback without killing. Record them separately if used. A boundary marker is a hint, not the authority: actual committed DB fields matter if a kill occurs between commit and marker write.
-
-## Images: validation, orphan, kill, retry and degraded text
-
-Keep a valid referenced S2A image initially. Use only S2A controls.
-
-- [ ] **Inject partial/corrupt staged file**: rejected. Active reference stays unchanged/valid; an unreferenced corrupt file may remain. This simulates truncated bytes, not an iOS mid-syscall kill.
-- [ ] **Stage valid image; fail DB reference**: an exception is reported; old reference stays valid, new completed file is unreferenced, text/hash/locator stay intact. Normal close/reopen must not promote it.
-- [ ] **Arm force-quit after validated staging**: wait for **READY TO FORCE-QUIT: VALIDATED IMAGE, BEFORE DB REFERENCE**. Force-quit Expo Go without release. Relaunch through Metro, open diagnostics and inspect first. Old image reference remains active/valid; the completed new file remains unreferenced. This kill is after completed/validated staging, not mid-write.
-- [ ] **Commit/retry fresh validated image**: valid new reference; exactly one logical asset row. Repeating is safe; text/locator remain unchanged.
-- [ ] **Clean eligible S2A orphan files**: only unreferenced test images are removed. Current referenced image remains valid. Cleanup/reset controls are disabled while a checkpoint is held.
-- [ ] **Remove referenced S2A image**, inspect before repair, then read/regenerate S2A: text remains readable with **[Local image unavailable: …]**, passage/settings remain. Reopen/inspect must not autoheal the image.
-- [ ] **Commit/retry fresh validated image** repairs only on this explicit action. Confirm valid image/reference. Then **Corrupt referenced S2A image**, inspect and read/regenerate: same degraded readable-text behavior. Explicitly retry to return to a valid image.
-
-## Disposable render recovery
-
-- [ ] With a valid image, read S2A, save a recognizable passage and chosen font/theme, and return via the reader's **Contents** button. S2A deliberately retains its disposable render files for this experiment.
-- [ ] Inspect/record hash and locator. Tap **Remove disposable S2A render directories**. It should report at least one removed session after reading. Canonical chapter/locator/preferences/reference must stay intact.
-- [ ] To demonstrate regeneration needs no network, keep this Expo Go session alive, turn off Wi-Fi/cellular without relaunching, and tap **Read/regenerate S2A chapter**. Text and accepted local image should render with the saved passage/spoilers/settings. Do not tap the safe external link. If Expo Go itself disconnects, record that limitation; do not count an unperformed regeneration as passed. Re-enable the network to use Metro again.
-- [ ] Repeat removal/regeneration with a deliberately missing S2A referenced image: text remains readable and the placeholder appears. Explicit image retry restores it when desired.
-
-The already-running offline regeneration check is S2A only; it does not prove independent offline cold start.
-
-## Isolation and result to send Owen/Codex
-
-- [ ] Return to **Normal Contents** after all experiments. Original synthetic story still has exactly three chapters, remembered normal passage/spoilers/font/theme remain, and no real SpaceBattles story appears.
-- [ ] S1 remains a separate development diagnostic; do not run live requests as part of this checklist.
-- [ ] Optionally inspect, then confirm **Reset S2A test data only** and inspect again: S2A is absent and requires explicit initialization. Recheck the normal-library baseline afterward.
-
-Report actual iOS/Expo Go versions, each checkbox pass/fail, text before/after hashes and locator comparison, row counts, image reference/validity/unreferenced count, cleanup/render results and normal-library isolation. Distinguish injected exception, normal reopen, **real before-commit kill**, **real image checkpoint kill**, and **after-completed-commit kill**. Include any banner that failed to appear and the exact error. Screenshots are optional; concise observations are enough.
-
-All boxes remain **pending** until Owen reports them. S2B has no evidence here and remains deferred. Prior unrelated S0/S1 limitations retain their recorded status.
+**S2A accepted; S2B deferred/pending. No PR merge, importer work or installation/signing workflow follows automatically from this acceptance.**
