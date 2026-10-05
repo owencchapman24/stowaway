@@ -1,9 +1,10 @@
-import { parseDocument } from 'htmlparser2';
+import { DomUtils, parseDocument } from 'htmlparser2';
 import type { ChildNode, Element } from 'domhandler';
 import { chapterId } from '../../domain/identity';
 import { accessFailure } from './request';
 import { documentUrl, postIdFromLink } from './url';
 import { S1Failure, type Category, type Document, type Entry, type Sample, type Thread } from './types';
+import type { StoryMetadata } from '../../domain/types';
 
 function elements(node: { children?: ChildNode[] }): Element[] {
   const list: Element[] = [];
@@ -45,6 +46,10 @@ function dom(page: Document, thread: Thread, fragment = false): Element[] {
   const denied = accessFailure(html);
   if (denied) throw denied;
   const list = elements(parseDocument(html));
+  if (!fragment && list.some((n) => /^thread-[0-9]+$/.test(n.attribs['data-content-key'] ?? '') &&
+      n.attribs['data-content-key'] !== `thread-${thread.threadId}`)) {
+    throw new S1Failure('parser', 'Source document contains conflicting thread identity.');
+  }
   if (!fragment && !list.some((n) => n.attribs['data-content-key'] === `thread-${thread.threadId}`)) {
     throw new S1Failure('unsupported-structure', 'Expected selected-thread source identity was not present.');
   }
@@ -157,16 +162,75 @@ export function parseRange(page: Document, thread: Thread, categoryId: string): 
   return rowItems(list, page, thread, categoryId);
 }
 
-export function samplePost(page: Document, thread: Thread, entry: Entry, categoryId: string): Sample {
+function selectedBody(page: Document, thread: Thread, entry: Entry, categoryId: string, requireCategory = false): Element {
+  if (entry.chapterId !== chapterId(thread.storyId, entry.postId)) throw new S1Failure('parser', 'Chapter identity does not match the selected story/post.');
   const posts = dom(page, thread).filter((n) => n.name === 'article' && has(n, 'message--post') &&
     (n.attribs.id === `js-post-${entry.postId}` || n.attribs['data-content'] === `post-${entry.postId}`));
-  if (posts.length !== 1 || !has(posts[0]!, `threadmark-category-${categoryId}`)) {
+  const post = posts[0];
+  const categories = (post?.attribs.class ?? '').split(/\s+/).filter((c) => /^threadmark-category-[0-9]+$/.test(c));
+  if (posts.length !== 1 || !post ||
+      (post.attribs.id && post.attribs.id !== `js-post-${entry.postId}`) ||
+      (post.attribs['data-content'] && post.attribs['data-content'] !== `post-${entry.postId}`) ||
+      (requireCategory && !categories.length) || categories.some((c) => c !== `threadmark-category-${categoryId}`)) {
     throw new S1Failure('parser', 'Representative numeric post/category did not match the manifest entry.');
   }
-  const body = elements(posts[0]!).find((n) => has(n, 'message-body'));
-  const prose = body && elements(body).find((n) => has(n, 'bbWrapper'));
-  if (!prose || !text(prose).trim()) throw new S1Failure('parser', 'Representative post has no readable body.');
+  const bodies = elements(post).filter((n) => has(n, 'message-body'));
+  const wrappers = bodies.length === 1 ? elements(bodies[0]!).filter((n) => has(n, 'bbWrapper')) : [];
+  const prose = wrappers[0];
+  if (wrappers.length !== 1 || !prose || !text(prose).trim()) throw new S1Failure('parser', 'Representative post has no unambiguous readable body.');
+  return prose;
+}
+
+export function samplePost(page: Document, thread: Thread, entry: Entry, categoryId: string): Sample {
+  const prose = selectedBody(page, thread, entry, categoryId, true);
   const tags = ['p', 'h1', 'h2', 'h3', 'em', 'strong', 'b', 'i', 'blockquote', 'ul', 'ol', 'li', 'table', 'img'];
   return { postId: entry.postId, bodyCharacters: text(prose).length,
     formattingTags: [...new Set(elements(prose).map((n) => n.name).filter((n) => tags.includes(n)))] };
+}
+
+export function parseStoryMetadata(page: Document, thread: Thread): Omit<StoryMetadata, 'categoryId'> {
+  const list = dom(page, thread);
+  const titles = list.filter((n) => n.name === 'h1' && has(n, 'p-title-value'));
+  const title = titles.length === 1 ? text(titles[0]!).replace(/\s+/g, ' ').trim().slice(0, 500) : '';
+  if (!title) throw new S1Failure('parser', 'Selected thread has no unambiguous story title.');
+  const description = list.filter((n) => has(n, 'p-description'));
+  const authors = description.flatMap(elements).filter((n) => n.name === 'a' && has(n, 'username'));
+  const author = authors.length === 1 ? text(authors[0]!).replace(/\s+/g, ' ').trim().slice(0, 200) || null : null;
+  return { id: thread.storyId, source: 'spacebattles', threadId: thread.threadId, title, author, sourceUrl: thread.url };
+}
+
+/** Transient extraction only. The caller must sanitize before persisting. */
+export function extractPostBody(page: Document, thread: Thread, entry: Entry, categoryId: string): string {
+  const prose = selectedBody(page, thread, entry, categoryId);
+  for (const node of elements(prose)) {
+    if (node.name === 'img') node.attribs.src = ''; // Even a source-supplied fixture URL is not a bundled asset.
+    if (node.name === 'a' && node.attribs.href) {
+      try { node.attribs.href = new URL(node.attribs.href, page.url).href; } catch { delete node.attribs.href; }
+    }
+    if (has(node, 'bbCodeSpoiler')) {
+      const inner = elements(node).find((n) => has(n, 'bbCodeSpoiler-content-inner'));
+      if (inner) {
+        node.name = 'details';
+        node.children = [...parseDocument('<summary>Spoiler</summary>').children, ...inner.children];
+      }
+    }
+  }
+  // XenForo's direct text/BR runs need paragraph-sized locator blocks. Preserve
+  // existing block markup; normalize only inline runs, before the sanitizer.
+  const blockTags = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'blockquote',
+    'table', 'pre', 'details', 'hr', 'img', 'figure']);
+  let html = '';
+  let run: ChildNode[] = [];
+  function flush() {
+    if (run.some((node) => text(node).trim())) html += `<p>${run.map((node) => DomUtils.getOuterHTML(node)).join('')}</p>`;
+    run = [];
+  }
+  for (const node of prose.children) {
+    if (node.type === 'tag' && (blockTags.has(node.name) || node.name === 'br')) {
+      flush();
+      if (node.name !== 'br') html += DomUtils.getOuterHTML(node);
+    } else run.push(node);
+  }
+  flush();
+  return `<div>${html}</div>`;
 }

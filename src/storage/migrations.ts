@@ -1,12 +1,12 @@
 import { exclusiveTransaction, type SqlDatabase } from './database';
 
-export async function migrate(db: SqlDatabase): Promise<void> {
+// S2A deliberately keeps its existing diagnostic schema; normal storage uses v2.
+export async function migrate(db: SqlDatabase, supportedVersion = 2): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   await exclusiveTransaction(db, async (tx) => {
     const version = await tx.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-    if ((version?.user_version ?? 0) > 1) throw new Error('Database is newer than this app.');
-    if (version?.user_version === 1) return;
-    await tx.execAsync(`
+    if ((version?.user_version ?? 0) > supportedVersion) throw new Error('Database is newer than this app.');
+    if ((version?.user_version ?? 0) < 1) await tx.execAsync(`
       CREATE TABLE stories (
         id TEXT PRIMARY KEY, source TEXT NOT NULL, thread_id TEXT NOT NULL,
         title TEXT NOT NULL, author TEXT NOT NULL, UNIQUE(source, thread_id)
@@ -28,6 +28,21 @@ export async function migrate(db: SqlDatabase): Promise<void> {
       );
       CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       PRAGMA user_version = 1;
+    `);
+    if (supportedVersion >= 2 && (version?.user_version ?? 0) < 2) await tx.execAsync(`
+      ALTER TABLE stories ADD COLUMN source_url TEXT NOT NULL DEFAULT '';
+      ALTER TABLE stories ADD COLUMN primary_category_id TEXT;
+      CREATE TABLE threadmark_entries (
+        story_id TEXT NOT NULL REFERENCES stories(id), post_id TEXT NOT NULL,
+        title TEXT NOT NULL, position INTEGER NOT NULL CHECK(position >= 0),
+        source_url TEXT NOT NULL,
+        PRIMARY KEY(story_id, post_id), UNIQUE(story_id, position)
+      );
+      INSERT INTO threadmark_entries(story_id, post_id, title, position, source_url)
+        SELECT story_id, post_id, title,
+          ROW_NUMBER() OVER (PARTITION BY story_id ORDER BY position, id) - 1, ''
+        FROM chapters;
+      PRAGMA user_version = 2;
     `);
   });
 }

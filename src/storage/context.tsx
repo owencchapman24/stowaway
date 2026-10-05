@@ -28,7 +28,7 @@ export function StorageProvider({ children }: { children: ReactNode }) {
   }, [attempt]);
   if (!storage) return <View style={styles.status}>
     {error ? <><Text accessibilityRole="alert">{error}</Text><Control label="Retry opening local storage" text="Retry" onPress={() => { setError(null); setAttempt(attempt + 1); }} /></>
-      : <><ActivityIndicator /><Text>Preparing the offline fixture…</Text></>}
+      : <><ActivityIndicator /><Text>Opening local library…</Text></>}
   </View>;
   return <Context.Provider value={{ ...storage, preferences, changePreferences: async (value) => {
     await storage.repository.savePreferences(value);

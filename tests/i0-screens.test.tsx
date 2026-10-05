@@ -1,0 +1,133 @@
+import { AppState, Linking, type AppStateStatus } from 'react-native';
+import { fireEvent, render, screen, waitFor, act } from '@testing-library/react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import Library from '../src/app/index';
+import AddStory from '../src/app/add-story';
+import StoryContents from '../src/app/story';
+import Reader from '../src/app/reader';
+import { useStorage } from '../src/storage/context';
+import { importNativeStory } from '../src/importing/native';
+import { S1Failure } from '../src/sources/spacebattles/types';
+import type { ChapterReaderProps } from '../src/reader/ChapterReader';
+import type { StorySummary } from '../src/domain/types';
+import { threadUrl } from './fixtures/spacebattles';
+
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return { router: { push: jest.fn(), replace: jest.fn() },
+    useLocalSearchParams: jest.fn(), useFocusEffect: (callback: () => void) => useEffect(callback, [callback]) };
+});
+jest.mock('../src/storage/context', () => ({ useStorage: jest.fn() }));
+jest.mock('../src/importing/native', () => ({ importNativeStory: jest.fn() }));
+let mockReaderProps: ChapterReaderProps;
+jest.mock('../src/reader/ChapterReader', () => ({ ChapterReader: (props: ChapterReaderProps) => { mockReaderProps = props; return null; } }));
+const fixture: StorySummary = { id: 'fixture:thread:1001', source: 'fixture', threadId: '1001', title: 'The Lantern Cartographer',
+  author: 'Synthetic author', sourceUrl: '', categoryId: null, total: 3, downloaded: 3 };
+const story: StorySummary = { id: 'spacebattles:thread:9001', source: 'spacebattles', threadId: '9001', title: 'Synthetic import',
+  author: null, sourceUrl: threadUrl, categoryId: '9', total: 3, downloaded: 1 };
+const entries = [
+  { id: story.id + ':post:101', postId: '101', title: 'First', position: 0, downloaded: true, sourceUrl: threadUrl + '#post-101' },
+  { id: story.id + ':post:102', postId: '102', title: 'Second', position: 1, downloaded: false, sourceUrl: threadUrl + '#post-102' },
+];
+const repository = { listStories: jest.fn(), getStory: jest.fn(), listContents: jest.fn() };
+const run = jest.mocked(importNativeStory);
+beforeAll(() => {
+  jest.mocked(useStorage).mockReturnValue({ repository, preferences: { theme: 'light', fontSize: 20 }, changePreferences: jest.fn(), imageWarning: null } as unknown as ReturnType<typeof useStorage>);
+  jest.mocked(useLocalSearchParams).mockReturnValue({});
+  repository.listStories.mockResolvedValue([]);
+  const warm = render(<Library />); warm.unmount();
+});
+beforeEach(() => {
+  jest.useFakeTimers();
+  jest.clearAllMocks(); run.mockReset();
+  jest.mocked(useLocalSearchParams).mockReturnValue({});
+  repository.listStories.mockResolvedValue([fixture, story]); repository.getStory.mockResolvedValue(story); repository.listContents.mockResolvedValue(entries);
+});
+afterEach(async () => {
+  await act(async () => { jest.runOnlyPendingTimers(); });
+  jest.useRealTimers();
+});
+
+test('Library lists stories/counts and routes Add Story and selected contents', async () => {
+  render(<Library />);
+  await waitFor(() => expect(screen.getByText('The Lantern Cartographer')).toBeTruthy());
+  expect(screen.getByText('3 / 3 text chapters downloaded')).toBeTruthy();
+  expect(screen.getByText('1 / 3 text chapters downloaded')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Add Story')); expect(router.push).toHaveBeenCalledWith('/add-story');
+  fireEvent.press(screen.getByLabelText('Open Synthetic import'));
+  expect(router.push).toHaveBeenCalledWith({ pathname: '/story', params: { story: story.id } });
+});
+
+test('Import starts deliberately, renders progress, cancels and exposes persistent partial resume', async () => {
+  let signal: AbortSignal | undefined; let finish!: (result: Awaited<ReturnType<typeof importNativeStory>>) => void;
+  run.mockImplementation((_url, _repo, options) => {
+    signal = options?.signal;
+    options?.onProgress?.({ phase: 'downloading', storyId: story.id, downloaded: 1, total: 3, title: 'Second' });
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  render(<AddStory />);
+  fireEvent.changeText(screen.getByLabelText('Public SpaceBattles thread URL'), threadUrl);
+  expect(run).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText('Import story'));
+  await waitFor(() => expect(screen.getByText('Downloading text: 1 / 3 · Second')).toBeTruthy());
+  fireEvent.press(screen.getByLabelText('Cancel import')); expect(signal?.aborted).toBe(true);
+  await act(async () => finish({ story, failure: new S1Failure('cancelled', 'Generated cancellation') }));
+  expect(screen.getByText('cancelled: Generated cancellation')).toBeTruthy();
+  expect(screen.getByLabelText('Resume Download')).toBeTruthy();
+});
+
+test('typed access failure and completed state are clear', async () => {
+  run.mockResolvedValueOnce({ story: null, failure: new S1Failure('blocked', 'Synthetic refusal', 403) });
+  render(<AddStory />);
+  fireEvent.changeText(screen.getByLabelText('Public SpaceBattles thread URL'), threadUrl);
+  fireEvent.press(screen.getByLabelText('Import story'));
+  await waitFor(() => expect(screen.getByText('blocked: Synthetic refusal')).toBeTruthy());
+  run.mockImplementationOnce(async (_value, _repo, options) => {
+    options?.onProgress?.({ phase: 'completed', downloaded: 3, total: 3 });
+    return { story: { ...story, downloaded: 3 }, failure: null };
+  });
+  fireEvent.press(screen.getByLabelText('Import story'));
+  await waitFor(() => expect(screen.getByText('Completed. All primary text downloaded.')).toBeTruthy());
+  expect(screen.queryByLabelText('Resume Download')).toBeNull();
+});
+
+test('resume screen reads stored state without fetching; leaving/backgrounding cancels active work', async () => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });
+  let signal: AbortSignal | undefined;
+  run.mockImplementation((_url, _repo, options) => { signal = options?.signal; return new Promise(() => undefined); });
+  let change!: (state: AppStateStatus) => void;
+  const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+    change = listener; return { remove: jest.fn() };
+  });
+  const view = render(<AddStory />);
+  await waitFor(() => expect(screen.getByLabelText('Resume Download')).toBeTruthy());
+  expect(run).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText('Resume Download'));
+  await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+  act(() => change('background')); expect(signal?.aborted).toBe(true);
+  view.unmount(); spy.mockRestore();
+});
+
+test('contents preserves order, gates missing bodies, offers resume and opens source only deliberately', async () => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });
+  const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+  render(<StoryContents />);
+  await waitFor(() => expect(screen.getByLabelText('Read First')).toBeTruthy());
+  expect(screen.getByText('1. First')).toBeTruthy(); expect(screen.getByText('2. Second')).toBeTruthy();
+  expect(screen.getByLabelText('Read Second')).toBeDisabled();
+  fireEvent.press(screen.getByLabelText('Read Second')); expect(router.push).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText('Read First'));
+  expect(router.push).toHaveBeenCalledWith({ pathname: '/reader', params: { chapter: entries[0]!.id } });
+  expect(open).not.toHaveBeenCalled(); fireEvent.press(screen.getByLabelText('Open story source in browser'));
+  expect(open).toHaveBeenCalledWith(threadUrl);
+  fireEvent.press(screen.getByLabelText('Resume Download'));
+  expect(router.push).toHaveBeenCalledWith({ pathname: '/add-story', params: { story: story.id } });
+  open.mockRestore();
+});
+
+test('normal reader Contents routes to its current story', () => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({ chapter: entries[0]!.id });
+  render(<Reader />);
+  mockReaderProps.onNavigate(null, story.id);
+  expect(router.replace).toHaveBeenCalledWith({ pathname: '/story', params: { story: story.id } });
+});

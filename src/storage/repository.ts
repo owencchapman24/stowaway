@@ -1,4 +1,4 @@
-import type { Chapter, ChapterSummary, Locator, Preferences } from '../domain/types';
+import type { Chapter, ChapterSummary, Locator, Preferences, StoryMetadata, StorySummary, StoryContentsEntry } from '../domain/types';
 import { DEFAULT_PREFERENCES } from '../domain/types';
 import { chapterId, storyId } from '../domain/identity';
 import { prepareContent } from '../content/sanitize';
@@ -29,7 +29,66 @@ export type WriteBoundary = (phase: 'before-write' | 'after-html-write' | 'befor
 
 export function createRepository(db: SqlDatabase) {
   const write = serializeWrites(db);
+  const storySelect = `SELECT s.id, s.source, s.thread_id AS threadId, s.title,
+    NULLIF(s.author, '') AS author, s.source_url AS sourceUrl, s.primary_category_id AS categoryId,
+    COUNT(e.post_id) AS total, COUNT(c.id) AS downloaded FROM stories s
+    LEFT JOIN threadmark_entries e ON e.story_id = s.id
+    LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id`;
   return {
+    async listStories(): Promise<StorySummary[]> {
+      return db.getAllAsync(`${storySelect} GROUP BY s.id ORDER BY s.title, s.id`);
+    },
+    async getStory(id: string): Promise<StorySummary | null> {
+      return db.getFirstAsync(`${storySelect} WHERE s.id = ? GROUP BY s.id`, id);
+    },
+    async listContents(id: string): Promise<StoryContentsEntry[]> {
+      const rows = await db.getAllAsync<Omit<StoryContentsEntry, 'downloaded'> & { downloaded: number }>(
+        `SELECT s.id || ':post:' || e.post_id AS id, e.post_id AS postId, e.title, e.position,
+          e.source_url AS sourceUrl, c.id IS NOT NULL AS downloaded
+         FROM threadmark_entries e JOIN stories s ON s.id = e.story_id
+         LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id
+         WHERE e.story_id = ? ORDER BY e.position`, id);
+      return rows.map((row) => ({ ...row, downloaded: Boolean(row.downloaded) }));
+    },
+    async commitInitialManifest(story: StoryMetadata, manifest: {
+      state: 'COMPLETE'; entries: { postId: string; title: string; url: string }[];
+    }): Promise<void> {
+      if (manifest.state !== 'COMPLETE' || !manifest.entries.length ||
+          story.source !== 'spacebattles' || story.id !== storyId(story.source, story.threadId) ||
+          !story.title.trim() || !story.categoryId || !story.sourceUrl ||
+          new Set(manifest.entries.map((entry) => entry.postId)).size !== manifest.entries.length) {
+        throw new Error('Invalid complete initial manifest.');
+      }
+      for (const entry of manifest.entries) {
+        if (chapterId(story.id, entry.postId) !== `${story.id}:post:${entry.postId}` || !entry.url) throw new Error('Invalid manifest entry.');
+      }
+      await write(async (tx) => {
+        // Initial import only: never replace an existing manifest or reconcile metadata.
+        if (await tx.getFirstAsync('SELECT id FROM stories WHERE id = ?', story.id)) return;
+        await tx.runAsync(`INSERT INTO stories(id, source, thread_id, title, author, source_url, primary_category_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`, story.id, story.source, story.threadId, story.title,
+          story.author ?? '', story.sourceUrl, story.categoryId);
+        for (const [position, entry] of manifest.entries.entries()) {
+          await tx.runAsync(`INSERT INTO threadmark_entries(story_id, post_id, title, position, source_url)
+            VALUES (?, ?, ?, ?, ?)`, story.id, entry.postId, entry.title, position, entry.url);
+        }
+      });
+    },
+    async commitDownloadedChapter(story: string, postId: string,
+      content: Pick<Chapter, 'html' | 'contentHash' | 'sanitizerVersion' | 'blockIds' | 'links'>,
+      signal?: AbortSignal): Promise<void> {
+      await write(async (tx) => {
+        if (signal?.aborted) throw new Error('Chapter commit cancelled.');
+        const entry = await tx.getFirstAsync<{ title: string; position: number }>(
+          'SELECT title, position FROM threadmark_entries WHERE story_id = ? AND post_id = ?', story, postId);
+        if (!entry) throw new Error('Chapter has no committed manifest entry.');
+        await tx.runAsync(`INSERT INTO chapters(id, story_id, post_id, title, position, html,
+          content_hash, sanitizer_version, block_ids, links) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT DO NOTHING`, chapterId(story, postId), story, postId, entry.title, entry.position,
+          content.html, content.contentHash, content.sanitizerVersion, JSON.stringify(content.blockIds), JSON.stringify(content.links));
+        if (signal?.aborted) throw new Error('Chapter commit cancelled.');
+      });
+    },
     async replaceChapterContent(id: string, content: Pick<Chapter, 'html' | 'contentHash' | 'sanitizerVersion' | 'blockIds' | 'links'>,
       boundary?: WriteBoundary): Promise<void> {
       await write(async (tx) => {
@@ -62,14 +121,21 @@ export function createRepository(db: SqlDatabase) {
           chapter.id, fixture.id, chapter.postId, chapter.title, chapter.position, chapter.html,
           chapter.contentHash, chapter.sanitizerVersion, JSON.stringify(chapter.blockIds), JSON.stringify(chapter.links));
         }
+        const version = await tx.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+        if ((version?.user_version ?? 0) >= 2) {
+          for (const chapter of fixture.chapters) await tx.runAsync(`INSERT INTO threadmark_entries(
+            story_id, post_id, title, position, source_url) VALUES (?, ?, ?, ?, '') ON CONFLICT DO NOTHING`,
+          fixture.id, chapter.postId, chapter.title, chapter.position);
+        }
         if (asset.relativePath) {
           await tx.runAsync('INSERT INTO assets(id, relative_path, byte_length) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET relative_path = excluded.relative_path, byte_length = excluded.byte_length',
             'harbor', asset.relativePath, asset.byteLength);
         }
       });
     },
-    async listChapters(): Promise<ChapterSummary[]> {
-      return db.getAllAsync<ChapterSummary>('SELECT id, title, position FROM chapters ORDER BY position, id');
+    async listChapters(story?: string): Promise<ChapterSummary[]> {
+      return story ? db.getAllAsync('SELECT id, title, position FROM chapters WHERE story_id = ? ORDER BY position, id', story)
+        : db.getAllAsync('SELECT id, title, position FROM chapters ORDER BY position, id');
     },
     async getChapter(id: string): Promise<Chapter | null> {
       const row = await db.getFirstAsync<ChapterRow>('SELECT * FROM chapters WHERE id = ?', id);
@@ -123,6 +189,12 @@ export function createRepository(db: SqlDatabase) {
     },
     async getAssetPath(): Promise<string | null> {
       const row = await db.getFirstAsync<{ relative_path: string }>('SELECT relative_path FROM assets WHERE id = ?', 'harbor');
+      return row?.relative_path ?? null;
+    },
+    async getChapterAssetPath(id: string): Promise<string | null> {
+      const row = await db.getFirstAsync<{ relative_path: string }>(`SELECT a.relative_path FROM chapters c
+        JOIN stories s ON s.id = c.story_id JOIN assets a ON a.id = 'harbor'
+        WHERE c.id = ? AND s.id = ?`, id, storyId(fixtureStory.source, fixtureStory.threadId));
       return row?.relative_path ?? null;
     },
   };
