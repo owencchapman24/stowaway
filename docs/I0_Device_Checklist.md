@@ -1,85 +1,94 @@
-# I0 physical iPhone checklist — acceptance pending
+# I0 physical iPhone checklist — core acceptance passed
 
-**I0 is NOT physically accepted.** This checklist is for Owen's next run, not a report of results. S0/S1/S2A retain their accepted status; **S2B remains deferred**. Use Expo Go/Metro, not an independently installed build. No EAS/signing/paid setup is needed.
+**CORE I0 PHYSICAL ACCEPTANCE PASSED.** Acceptance recorded **5 October 2026, America/New_York**, from Owen's supplied physical-iPhone report for implementation **d09ff85518a08fa002c28861666125643e047753** on `feat/spacebattles-import-slice`. Testing used Expo Go/Metro. These are user-reported results, not an agent-operated iPhone run or independent device/packet inspection. Exact iOS and Expo Go versions remain unconfirmed; the previously reported device was an iPhone 17 Pro.
 
-Implementation branch: **feat/spacebattles-import-slice**. See [implementation/model/validation notes](I0_Real_Story_Import.md). Record iPhone model, iOS and Expo Go versions and the tested commit. Keep screenshots/prose/captures out of Git.
+**S0, S1, S2A and I0 accepted; S2B deferred. Full v0 is not complete.** This does not prove independently installed Stowaway, Metro-free cold start or first launch in airplane mode. See [implementation, validation and limits](I0_Real_Story_Import.md).
 
-On Windows:
+## Physical v1 → v2 migration — reported passed
+
+- [x] Actual normal v1 database migrated to v2 on Owen's iPhone **without reset**.
+- [x] The Lantern Cartographer remained present with exactly **3/3** downloaded chapters.
+- [x] Existing reading position and preferences remained usable.
+- [x] Bundled harbor image remained available.
+- [x] Normal fixture navigation continued to work.
+
+These are physical preservation results, separate from host-SQLite integration evidence.
+
+## Story A — full import/read/idempotency reported passed
+
+[Normal Isn't Ordinary [Pokemon SI]](https://forums.spacebattles.com/threads/normal-isnt-ordinary-pokemon-si.1234421/):
+
+- [x] Import succeeded at **25/25 primary text chapters**; story persisted in Library.
+- [x] Title parsed correctly as **Normal Isn't Ordinary [Pokemon SI]**; author as **sabhnc**.
+- [x] Primary contents/order matched the previously verified S1 source.
+- [x] Real chapter text rendered through the existing normal Stowaway reader.
+- [x] Fixture harbor image did not leak into this imported story.
+- [x] Previous/Next stayed inside the real story; Contents returned to that story's contents screen.
+- [x] Real chapter position restored across typography/theme changes and leave/reopen.
+- [x] Force-quit/relaunch through Metro retained usable real chapter position restoration.
+- [x] Downloaded chapters remained readable with phone networking disabled **while the Expo Go project was already running**.
+- [x] Re-importing the completed URL did not create a duplicate story or restart a fresh body download.
+
+This is the full real-story import/read/idempotency pass. The deliberate partial-cancel test used **Story C**, not Story A.
+
+## Story C — partial cancellation/restart/resume reported passed
+
+[Eyes Open](https://forums.spacebattles.com/threads/eyes-open-pokemon-fanfic.1129205/):
+
+- [x] Import began from a **COMPLETE 34-entry primary manifest**.
+- [x] Owen deliberately cancelled after **four chapter bodies** committed.
+- [x] Import showed **Cancelled**, committed text retained, **4/34**, and Resume Download available.
+- [x] Library showed **Eyes Open (Pokemon Fanfic)**, author **ViridiMayai**, **4/34** and the pending-chapters message.
+- [x] Contents showed exactly the committed early entries as Text downloaded; later entries were Not downloaded and disabled.
+- [x] A committed real chapter opened/read successfully while partial.
+- [x] At the partial boundary, Next was disabled because the next primary entry was not downloaded; no fake/empty reader opened.
+- [x] Owen force-quit Expo Go and relaunched through Metro; the same **4/34** committed partial state persisted.
+- [x] Download did not restart automatically; prior committed chapters stayed locally readable after relaunch.
+- [x] Owen explicitly resumed; missing work completed to **34/34**.
+- [x] The final story remained one logical Library entry, without a duplicate story.
+- [x] Completed Eyes Open text rendered successfully; author metadata was **ViridiMayai**.
+
+Implementation/tests establish missing-only request logic. The phone report establishes correct visible persistence/resume behavior; it is **not packet-level proof that prior bodies were never requested again**.
+
+## Final Library isolation and real reader — reported passed
+
+| Library story | Downloaded / total |
+| --- | ---: |
+| Eyes Open (Pokemon Fanfic) | 34 / 34 |
+| Normal Isn't Ordinary [Pokemon SI] | 25 / 25 |
+| The Lantern Cartographer | 3 / 3 |
+
+- [x] No duplicate real story appeared; the synthetic fixture stayed intact.
+- [x] S1/S2A remained development-only diagnostics.
+- [x] Real Eyes Open examples **Prologue**, **Chapter 3: Trespassing** and **Chapter 12: Racketeering** rendered readably.
+- [x] Standard font/theme controls, Previous/Contents/Next and persistent locator behavior worked in the normal reader.
+
+Only chapter-title metadata is recorded here. No story prose/raw pages/screenshots are committed.
+
+The demonstrated loop is: paste public URL → COMPLETE primary manifest → persist story/manifest → download sanitized text → cancel safely retaining completed bodies → survive app restart → explicitly resume only missing work → complete story → read local real chapters → preserve position → avoid duplicate story creation.
+
+## Remaining limits and unreported checks
+
+I0 remains text-first: source images are not downloaded and remain placeholders. No manual update/check-for-new-chapters, rename/reorder/removal reconciliation, historical edit detection, Sidestory/Apocrypha/Informational/Omake import, read/unread, download/story deletion, search, sync, backend or notifications exists. Public/commercial, republication and App Store authorization remain separate. The next product slice must be explicitly chosen.
+
+- [ ] Confirm actual iOS/Expo Go versions.
+- [ ] Fresh first/middle/last numeric post-ID comparison beyond the supplied contents/order match to prior S1 evidence was not separately reported.
+- [ ] Physical image-variant, VoiceOver and direct reader script/network diagnostics were not newly reported for I0; previous statuses remain unchanged.
+- [ ] **S2B deferred:** independently installed Stowaway, bundled JS/assets, no Expo Go/Metro, successful offline cold launch and offline force-quit/relaunch.
+
+These unreported checks do not revoke core I0 acceptance and are not marked as passes. The network-disabled result belongs to already-running Story A reading; no independent offline launch or separate Story C network-disabled run is inferred.
+
+## Reproducing the accepted loop
+
+Future regression work may use the two public URLs above. It is not unfinished core acceptance work. Keep Node 22 LTS >=22.13 or Node 24 LTS >=24.3, SDK 57 Expo Go and Metro; CLI/Expo Go use the same account, Windows/iPhone the same Wi-Fi and local-network permissions.
 
 ```powershell
 cd C:\Users\ocac0\Documents\GitHub\stowaway
 git switch feat/spacebattles-import-slice
-node --version
-npm.cmd --version
 npm.cmd ci
 npm.cmd start
 ```
 
-Use Node 22 LTS >=22.13 or Node 24 LTS >=24.3 and the current SDK 57 App Store Expo Go. Keep CLI/Expo Go on the same Expo account, Windows/iPhone on the same Wi-Fi, Windows private-network firewall permitting Node and Expo Go local-network permission enabled. Scan the terminal QR. Keep Metro running for relaunch.
+Open Add Story and tap Import deliberately. For a new partial run cancel after several commits, inspect Library/Contents, force-quit/relaunch through Metro, then explicitly Resume Download. An already-complete story returns its existing state without a new import. Stop on blocked/login/challenge or typed failure; never copy cookies, authenticate, proxy or bypass. No EAS/signing or paid setup is required.
 
-Acceptance story A: **Normal Isn't Ordinary [Pokemon SI]** — [public source](https://forums.spacebattles.com/threads/normal-isnt-ordinary-pokemon-si.1234421/). Copy this URL into the Add Story field:
-
-```text
-https://forums.spacebattles.com/threads/normal-isnt-ordinary-pokemon-si.1234421/
-```
-
-S1 observed **25 primary entries**, first post **111923315**, last **124318183**. Compare with the current source; these are historical observations, not hard-coded application values. If the source has changed, record the actual primary count/IDs and explain the difference.
-
-## A — migration and partial download
-
-- [ ] Before starting, confirm Library contains **The Lantern Cartographer**, three downloaded chapters, and the old passage/preferences/bundled harbor image still work after v2 migration. Record the baseline.
-- [ ] Tap **Add Story**. Opening the screen and pasting the URL alone cause no import.
-- [ ] Tap **Import** deliberately. Observe complete primary manifest discovery, total **25** if unchanged, then foreground text download with downloaded/total and current chapter title.
-- [ ] Tap **Cancel** after several chapter commits, preferably 3–5 and before completion. Wait for the cancelled status. Record the final authoritative downloaded count **N**; a chapter that committed just before cancellation can increase the final count.
-- [ ] Tap **Library**. A single real story remains at **N / 25**, alongside the original fixture.
-- [ ] Open that story's contents. Exactly N entries say **Text downloaded**; remaining entries say **Not downloaded**, are disabled and cannot open a fake/empty reader.
-- [ ] Open a downloaded entry, verify actual chapter text and use **Contents** to return to this story.
-
-If blocked, challenge/login/interstitial, wrong body or typed parser/storage/network failure occurs, stop and record code/HTTP status if displayed, stage, downloaded/total and selected post ID. Do not log prose, bypass a challenge, copy cookies, authenticate, proxy or substitute alternate endpoints. Already committed text should remain available; report that too.
-
-## B — real restart and explicit resume
-
-- [ ] Force-quit Expo Go from the iOS app switcher. Relaunch Stowaway through Metro with networking restored as necessary.
-- [ ] Partial story still exists with the same COMPLETE manifest and authoritative N downloaded count. No automatic download starts.
-- [ ] Previously downloaded entries still open/read locally; missing entries still say **Not downloaded**.
-- [ ] Tap **Resume Download** from story contents. The Add Story screen loads saved URL/counts without fetching until the next deliberate tap.
-- [ ] Tap **Resume Download** there. Progress starts from N, preserves existing chapters and reaches **25 / 25** if the source is unchanged.
-- [ ] Library has one fixture and one real story, exactly 25 primary entries/bodies, and no duplicate titles/IDs. Earlier downloaded chapters/positions remain intact.
-
-Host tests verify missing-only requests and duplicate avoidance. The UI's counts do not independently prove native packet-level no-refetch behavior; report visible device behavior without claiming wire inspection.
-
-## C — compare primary source contents
-
-- [ ] Compare persisted story title and author with the source's thread header. Report **Author unavailable** if extraction is uncertain; do not infer from a later post.
-- [ ] Compare all 25 ordered primary chapter titles with the site's primary/default Threadmarks, including any pages/ranges. Excluded side categories must not appear.
-- [ ] Compare first/middle/last source post IDs against the development **Post ID** lines in story contents. Record the actual selected middle ID and endpoint IDs.
-
-## D — real reading and story-specific navigation
-
-- [ ] Open the first, a middle and the final real chapter. Confirm exact matching post content and readable headings/emphasis/quotes/lists/tables/spoilers where present.
-- [ ] Any source image is an explicit omitted-image placeholder. Imported chapters show no fixture harbor image; no source-image download is claimed.
-- [ ] Previous/Next stay inside the real story; first/final bounds do not enter the synthetic story.
-- [ ] **Contents** returns to this real story. Fixture Contents and navigation remain separate.
-- [ ] Safe links open only after a deliberate tap. Do not use external links during the offline test.
-
-## E — position and preferences
-
-- [ ] Scroll to a recognizable passage in a real chapter, expand spoiler ancestors if relevant, and wait briefly for the position save.
-- [ ] Change font size/theme. The same-version passage remains usable after reflow.
-- [ ] Tap **Contents**, reopen that chapter and confirm the saved passage/preferences.
-- [ ] Force-quit/relaunch through Metro and reopen the same chapter. The last completed locator remains, with unchanged content hash.
-
-## F — already-running offline text reading
-
-- [ ] Keep the Expo Go project already running and disable phone Wi-Fi/cellular.
-- [ ] Open/read downloaded real chapters and navigate between them. No SpaceBattles source connection is required to render SQLite text or regenerate local reader files.
-- [ ] Contents/counts remain available locally; source images stay placeholders.
-- [ ] Re-enable networking for Metro as needed. Do not treat this as standalone/offline cold-start acceptance or S2B.
-
-## G — idempotency and isolation
-
-- [ ] After 25/25, paste the same URL again and tap Import. It shows/opens the existing complete story without creating a second story or restarting body downloads.
-- [ ] Fixture still has its original three bodies, image and saved passage; current global reading preferences are those deliberately selected during testing, since preferences are shared.
-- [ ] S1/S2A remain development diagnostics, separate from normal story import. Do not reset/repair S2A for this test. No other real story appears.
-
-Send results A–G, actual counts/IDs, tested commit/client versions, any failure and anything untested. **Only Owen's reported device results can establish I0 physical acceptance.** No PR creation/merge, source images, updates or S2B follows automatically.
+**CORE I0 PHYSICAL ACCEPTANCE PASSED. S2B deferred; full v0 incomplete. Acceptance follow-up authorizes documentation, a separate commit/push and PR preparation only. No PR merge or new product slice is authorized.**
