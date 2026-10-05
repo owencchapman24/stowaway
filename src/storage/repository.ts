@@ -24,9 +24,34 @@ interface LocatorRow {
   progression: number; expanded_spoilers: string;
 }
 
+/** Optional diagnostic boundary; exceptions are handled by the real transaction. */
+export type WriteBoundary = (phase: 'before-write' | 'after-html-write' | 'before-commit') => Promise<void>;
+
 export function createRepository(db: SqlDatabase) {
   const write = serializeWrites(db);
   return {
+    async replaceChapterContent(id: string, content: Pick<Chapter, 'html' | 'contentHash' | 'sanitizerVersion' | 'blockIds' | 'links'>,
+      boundary?: WriteBoundary): Promise<void> {
+      await write(async (tx) => {
+        if (!await tx.getFirstAsync('SELECT id FROM chapters WHERE id = ?', id)) throw new Error('Unknown chapter.');
+        await boundary?.('before-write');
+        await tx.runAsync('UPDATE chapters SET html = ?, content_hash = ? WHERE id = ?', content.html, content.contentHash, id);
+        await boundary?.('after-html-write');
+        await tx.runAsync('UPDATE chapters SET sanitizer_version = ?, block_ids = ?, links = ? WHERE id = ?',
+          content.sanitizerVersion, JSON.stringify(content.blockIds), JSON.stringify(content.links), id);
+        await boundary?.('before-commit');
+      });
+    },
+    async commitAssetReference(asset: { relativePath: string; byteLength: number }, boundary?: WriteBoundary): Promise<void> {
+      // Caller must finish and validate staging before supplying this reference.
+      if (!/^assets\/[a-f0-9-]{36}\.png$/.test(asset.relativePath) || !Number.isSafeInteger(asset.byteLength) || asset.byteLength <= 0) throw new Error('Invalid asset reference.');
+      await write(async (tx) => {
+        await boundary?.('before-write');
+        await tx.runAsync('INSERT INTO assets(id, relative_path, byte_length) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET relative_path = excluded.relative_path, byte_length = excluded.byte_length',
+          'harbor', asset.relativePath, asset.byteLength);
+        await boundary?.('before-commit');
+      });
+    },
     async seed(fixture: Awaited<ReturnType<typeof compileFixture>>, asset: { relativePath: string; byteLength: number }) {
       await write(async (tx) => {
         await tx.runAsync('INSERT INTO stories(id, source, thread_id, title, author) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',

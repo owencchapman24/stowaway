@@ -38,10 +38,10 @@ Install or update the current **App Store Expo Go (SDK 57)** and sign it into th
 - [ ] Visually verify that the encoded active link is plain text and the remote image is an explicit placeholder. The deliberate safe-link browser action passed separately above.
 - [ ] Inspect the actual iOS WebView with Safari Web Inspector (requires a Mac with the device connected; not available from this Windows session) or equivalent device diagnostics: `window.__STOWAWAY_SOURCE_SCRIPT_RAN__` is absent, no source alert occurs, and the reader Network panel shows no HTTP(S) content requests. Use the harmless synthetic fixture only. A host DOM test or Hermes export does not establish this result.
 
-## S2 — separate and pending
+## Subsequent S2 status — S2A accepted; S2B deferred
 
 - [ ] Independently installed bundled Stowaway preview, Metro unavailable, airplane mode, force-quit and cold start.
-- [ ] Native text-transaction and image-save interruption/recovery: old text/progress survive, incomplete images become placeholders, and retries create no duplicate records.
+- [x] Subsequent **S2A synthetic/disposable recovery** passed on Owen's iPhone through Expo Go/Metro: failed text transactions and real process kills preserved committed state; image/reference recovery, safe degradation, retry, cleanup and render regeneration passed. See [S2A's precise acceptance evidence](S2A_Device_Checklist.md). This does not mark unrelated S0 diagnostics passed.
 
 No EAS build, purchase or submission was performed in this task. Expo Go may need Metro to relaunch the project. Reading an already-open chapter after network loss does not prove an independently installed Stowaway build or S2 cold start.
 
@@ -49,4 +49,4 @@ No EAS build, purchase or submission was performed in this task. Expo Go may nee
 
 **Core S0 physical reader acceptance passed, as reported by Owen on 5 October 2026.** The main value proposition was demonstrated on his iPhone: local synthetic chapters render, persist and resume, preserve the passage through typography changes, support nested spoilers and local imagery, and remain readable after network loss while already open. No blocking reader defect was reported during these tests.
 
-This result covers the reported functional behaviors, not every device diagnostic in the October audit. VoiceOver, direct source-script/network inspection and the other unchecked cases remain explicitly unverified. Automated fixture/storage/bridge tests are separate evidence and do not turn these pending device checks into passes. **S2 remains separate.** Subsequent core S1 physical acceptance is recorded in the [S1 access-spike notes](S1_Access_Spike.md); it does not mark these remaining S0 diagnostics as passed.
+This result covers the reported functional behaviors, not every device diagnostic in the October audit. VoiceOver, direct source-script/network inspection and the other unchecked cases remain explicitly unverified. Automated fixture/storage/bridge tests are separate evidence and do not turn these pending device checks into passes. **S2A is subsequently accepted; S2B remains separate and deferred.** Subsequent core S1 physical acceptance is recorded in the [S1 access-spike notes](S1_Access_Spike.md); it does not mark these remaining S0 diagnostics as passed.
