@@ -92,3 +92,15 @@ npm.cmd start
 Open Add Story and tap Import deliberately. For a new partial run cancel after several commits, inspect Library/Contents, force-quit/relaunch through Metro, then explicitly Resume Download. An already-complete story returns its existing state without a new import. Stop on blocked/login/challenge or typed failure; never copy cookies, authenticate, proxy or bypass. No EAS/signing or paid setup is required.
 
 **CORE I0 PHYSICAL ACCEPTANCE PASSED. S2B deferred; full v0 incomplete. Acceptance follow-up authorizes documentation, a separate commit/push and PR preparation only. No PR merge or new product slice is authorized.**
+
+## Review-fix physical regressions — pending
+
+PR #4's targeted review fixes follow accepted checkpoint **c707f39**. The reported passes above remain historical acceptance; no new iPhone run is claimed for the changed parser, cancellation guard or prefill behavior. All malformed/conflicting source regressions use generated fixtures, never live source requests.
+
+- [ ] Cancel/background during a deliberately chosen initial import and body download; inspect authoritative counts, relaunch and explicitly resume. Retain existing accepted stories/positions without resetting storage. The final cancellable boundary is after FK validation and before returning control for COMMIT; later cancellation may retain completed work.
+- [ ] Open Resume, observe saved-story loading, then edit/import a different URL; verify counts/actions remain attached to that operation and loading alone starts no source traffic.
+- [ ] Smoke-check bare and anchor/span-wrapped image omission placeholders beside prose, current-story navigation, passage restoration and fixture harbor isolation; source images remain undownloaded.
+- [ ] Repeat relevant default S2A transaction/recovery and reader smoke checks with its isolated database. The optional guard leaves callers without a guard and global FK validation unchanged; host tests are not native recovery evidence.
+- [ ] If a bounded selected-story S1 range smoke is repeated, verify normal range discovery still works; absent explicit fragment identity remains supported. Do not infer wire-level or S2B acceptance from it.
+
+The [review-fix record and deferred follow-ups](I0_Real_Story_Import.md#pr-4-targeted-review-fixes--5-october-2026) document unchanged global FK-scan performance and S1 concurrent diagnostic budgeting. PR #4 must remain unmerged until separately authorized.

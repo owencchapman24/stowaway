@@ -46,9 +46,9 @@ function dom(page: Document, thread: Thread, fragment = false): Element[] {
   const denied = accessFailure(html);
   if (denied) throw denied;
   const list = elements(parseDocument(html));
-  if (!fragment && list.some((n) => /^thread-[0-9]+$/.test(n.attribs['data-content-key'] ?? '') &&
+  if (list.some((n) => /^thread-[0-9]+$/.test(n.attribs['data-content-key'] ?? '') &&
       n.attribs['data-content-key'] !== `thread-${thread.threadId}`)) {
-    throw new S1Failure('parser', 'Source document contains conflicting thread identity.');
+    throw new S1Failure(fragment ? 'incomplete' : 'parser', 'Source document contains conflicting thread identity.');
   }
   if (!fragment && !list.some((n) => n.attribs['data-content-key'] === `thread-${thread.threadId}`)) {
     throw new S1Failure('unsupported-structure', 'Expected selected-thread source identity was not present.');
@@ -222,7 +222,9 @@ export function extractPostBody(page: Document, thread: Thread, entry: Entry, ca
   let html = '';
   let run: ChildNode[] = [];
   function flush() {
-    if (run.some((node) => text(node).trim())) html += `<p>${run.map((node) => DomUtils.getOuterHTML(node)).join('')}</p>`;
+    if (run.some((node) => text(node).trim()) || elements({ children: run }).some((node) => node.name === 'img')) {
+      html += `<p>${run.map((node) => DomUtils.getOuterHTML(node)).join('')}</p>`;
+    }
     run = [];
   }
   for (const node of prose.children) {

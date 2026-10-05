@@ -17,6 +17,8 @@ export default function AddStory() {
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [prefilledId, setPrefilledId] = useState<string | null>(null);
+  const prefilling = !!id && prefilledId !== id;
   const abort = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -27,12 +29,18 @@ export default function AddStory() {
   useEffect(() => {
     let active = true;
     if (id) repository.getStory(id).then((story) => {
-      if (active && story) { setUrl(story.sourceUrl); setResult({ story, failure: null }); }
-    }).catch(() => { if (active) setLocalError('storage: Could not read the saved story.'); });
+      if (active) {
+        setUrl(story?.sourceUrl ?? ''); setResult(story ? { story, failure: null } : null); setProgress(null);
+        setLocalError(null);
+      }
+    }).catch(() => { if (active) {
+      setUrl(''); setResult(null); setProgress(null); setLocalError('storage: Could not read the saved story.');
+    } })
+      .finally(() => { if (active) setPrefilledId(id); });
     return () => { active = false; };
   }, [id, repository]);
   async function run(value: string) {
-    if (abort.current) return;
+    if (prefilling || abort.current) return;
     const controller = new AbortController(); abort.current = controller;
     setRunning(true); setResult(null); setLocalError(null);
     try {
@@ -42,20 +50,24 @@ export default function AddStory() {
     } catch { if (mounted.current) setLocalError('Import failed; completed text is retained.'); }
     finally { abort.current = null; if (mounted.current) setRunning(false); }
   }
-  const status = !progress ? 'Ready. Import starts only when you tap Import.' : {
+  function editUrl(value: string) {
+    if (prefilling || running) return;
+    setUrl(value); setResult(null); setProgress(null); setLocalError(null);
+  }
+  const status = prefilling ? 'Loading saved story…' : !progress ? 'Ready. Import starts only when you tap Import.' : {
     validating: 'Validating URL', manifest: `Fetching complete primary manifest: ${progress.total} entries discovered`,
     saving: `Manifest COMPLETE: ${progress.total} entries. Saving manifest`,
     downloading: `Downloading text: ${progress.downloaded} / ${progress.total}${progress.title ? ` · ${progress.title}` : ''}`,
     completed: 'Completed. All primary text downloaded.', cancelled: 'Cancelled. Completed text is retained.', failed: 'Import stopped.',
   }[progress.phase];
-  const story = result?.story;
+  const story = prefilling ? null : result?.story;
   return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.content}>
     <Text accessibilityRole="header" style={styles.heading}>Add SpaceBattles Story</Text>
     <Text>Personal public-thread text import. Source images are not downloaded in I0.</Text>
     <TextInput accessibilityLabel="Public SpaceBattles thread URL" placeholder="Paste a public HTTPS thread URL"
-      autoCapitalize="none" autoCorrect={false} keyboardType="url" value={url} onChangeText={setUrl}
-      editable={!running} style={styles.input} />
-    <Control label="Import story" text="Import" disabled={running || !url.trim()} onPress={() => { void run(url); }} />
+      autoCapitalize="none" autoCorrect={false} keyboardType="url" value={url} onChangeText={editUrl}
+      editable={!running && !prefilling} style={styles.input} />
+    <Control label="Import story" text="Import" disabled={running || prefilling || !url.trim()} onPress={() => { void run(url); }} />
     {running && <Control label="Cancel import" text="Cancel" onPress={() => abort.current?.abort()} />}
     <Text accessibilityLiveRegion="polite">{status}</Text>
     {localError && <Text accessibilityRole="alert">{localError}</Text>}

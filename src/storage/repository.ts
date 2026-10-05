@@ -52,7 +52,9 @@ export function createRepository(db: SqlDatabase) {
     },
     async commitInitialManifest(story: StoryMetadata, manifest: {
       state: 'COMPLETE'; entries: { postId: string; title: string; url: string }[];
-    }): Promise<void> {
+    }, signal?: AbortSignal): Promise<void> {
+      const checkCancelled = () => { if (signal?.aborted) throw new Error('Manifest commit cancelled.'); };
+      checkCancelled();
       if (manifest.state !== 'COMPLETE' || !manifest.entries.length ||
           story.source !== 'spacebattles' || story.id !== storyId(story.source, story.threadId) ||
           !story.title.trim() || !story.categoryId || !story.sourceUrl ||
@@ -63,31 +65,37 @@ export function createRepository(db: SqlDatabase) {
         if (chapterId(story.id, entry.postId) !== `${story.id}:post:${entry.postId}` || !entry.url) throw new Error('Invalid manifest entry.');
       }
       await write(async (tx) => {
+        checkCancelled();
         // Initial import only: never replace an existing manifest or reconcile metadata.
         if (await tx.getFirstAsync('SELECT id FROM stories WHERE id = ?', story.id)) return;
+        checkCancelled();
         await tx.runAsync(`INSERT INTO stories(id, source, thread_id, title, author, source_url, primary_category_id)
           VALUES (?, ?, ?, ?, ?, ?, ?)`, story.id, story.source, story.threadId, story.title,
           story.author ?? '', story.sourceUrl, story.categoryId);
         for (const [position, entry] of manifest.entries.entries()) {
+          checkCancelled();
           await tx.runAsync(`INSERT INTO threadmark_entries(story_id, post_id, title, position, source_url)
             VALUES (?, ?, ?, ?, ?)`, story.id, entry.postId, entry.title, position, entry.url);
         }
-      });
+        checkCancelled();
+      }, checkCancelled);
     },
     async commitDownloadedChapter(story: string, postId: string,
       content: Pick<Chapter, 'html' | 'contentHash' | 'sanitizerVersion' | 'blockIds' | 'links'>,
       signal?: AbortSignal): Promise<void> {
+      const checkCancelled = () => { if (signal?.aborted) throw new Error('Chapter commit cancelled.'); };
       await write(async (tx) => {
-        if (signal?.aborted) throw new Error('Chapter commit cancelled.');
+        checkCancelled();
         const entry = await tx.getFirstAsync<{ title: string; position: number }>(
           'SELECT title, position FROM threadmark_entries WHERE story_id = ? AND post_id = ?', story, postId);
         if (!entry) throw new Error('Chapter has no committed manifest entry.');
+        checkCancelled();
         await tx.runAsync(`INSERT INTO chapters(id, story_id, post_id, title, position, html,
           content_hash, sanitizer_version, block_ids, links) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT DO NOTHING`, chapterId(story, postId), story, postId, entry.title, entry.position,
           content.html, content.contentHash, content.sanitizerVersion, JSON.stringify(content.blockIds), JSON.stringify(content.links));
-        if (signal?.aborted) throw new Error('Chapter commit cancelled.');
-      });
+        checkCancelled();
+      }, checkCancelled);
     },
     async replaceChapterContent(id: string, content: Pick<Chapter, 'html' | 'contentHash' | 'sanitizerVersion' | 'blockIds' | 'links'>,
       boundary?: WriteBoundary): Promise<void> {

@@ -108,6 +108,46 @@ test('resume screen reads stored state without fetching; leaving/backgrounding c
   view.unmount(); spy.mockRestore();
 });
 
+test('delayed resume prefill blocks edits/import; later edits clear old story actions and import the new URL', async () => {
+  const appState = jest.spyOn(AppState, 'addEventListener').mockReturnValue({ remove: jest.fn() });
+  jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });
+  let resolveStory!: (value: StorySummary) => void;
+  repository.getStory.mockReturnValueOnce(new Promise((resolve) => { resolveStory = resolve; }));
+  const otherUrl = 'https://forums.spacebattles.com/threads/9002/';
+  const other = { ...story, id: 'spacebattles:thread:9002', threadId: '9002', title: 'Other synthetic story', sourceUrl: otherUrl };
+  let finish!: (value: Awaited<ReturnType<typeof importNativeStory>>) => void;
+  run.mockImplementation((_url, _repo, options) => {
+    options?.onProgress?.({ phase: 'downloading', storyId: other.id, downloaded: 1, total: 3, title: 'Other passage' });
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  const view = render(<AddStory />);
+  expect(screen.getByText('Loading saved story…')).toBeTruthy();
+  expect(screen.getByLabelText('Public SpaceBattles thread URL').props.editable).toBe(false);
+  expect(screen.getByLabelText('Import story')).toBeDisabled();
+  fireEvent.changeText(screen.getByLabelText('Public SpaceBattles thread URL'), otherUrl);
+  fireEvent.press(screen.getByLabelText('Import story'));
+  expect(run).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Public SpaceBattles thread URL').props.value).toBe('');
+
+  await act(async () => resolveStory(story));
+  expect(screen.getByLabelText('Public SpaceBattles thread URL').props.value).toBe(threadUrl);
+  expect(screen.getByLabelText('Public SpaceBattles thread URL').props.editable).toBe(true);
+  expect(screen.getByLabelText('Resume Download')).toBeTruthy();
+  expect(run).not.toHaveBeenCalled();
+  fireEvent.changeText(screen.getByLabelText('Public SpaceBattles thread URL'), otherUrl);
+  expect(screen.queryByLabelText('Resume Download')).toBeNull();
+  expect(screen.queryByLabelText('Open story contents')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Import story'));
+  expect(run).toHaveBeenCalledWith(otherUrl, repository, expect.anything());
+  expect(screen.getByText('Downloading text: 1 / 3 · Other passage')).toBeTruthy();
+  expect(screen.queryByText('Synthetic import: 1 / 3 text chapters downloaded')).toBeNull();
+  await act(async () => finish({ story: other, failure: new S1Failure('cancelled', 'Synthetic cancellation') }));
+  expect(screen.getByText('Other synthetic story: 1 / 3 text chapters downloaded')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Open story contents'));
+  expect(router.replace).toHaveBeenCalledWith({ pathname: '/story', params: { story: other.id } });
+  view.unmount(); appState.mockRestore();
+});
+
 test('contents preserves order, gates missing bodies, offers resume and opens source only deliberately', async () => {
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });
   const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);

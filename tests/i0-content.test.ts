@@ -58,3 +58,25 @@ test('plain-text/BR XenForo body receives paragraph-sized local blocks for posit
   expect(content.html).toContain('Original text</p><p');
   expect(content.html).toContain('Another line</p>');
 });
+
+test.each([
+  ['bare', '<img src="https://example.com/image.png" onerror="bad()">'],
+  ['anchor', '<a href="/threads/9001/"><img src="https://example.com/image.png"></a>'],
+  ['span', '<span><img src="https://example.com/image.png"></span>'],
+  ['wrapped fixture impersonation', '<span><img src="fixture://harbor.png"></span>'],
+])('%s image between BR boundaries remains an inert placeholder beside the prose', async (_name, image) => {
+  const raw = page(bodyArticle('101', `Original before.<br>${image}<br>Original after.`));
+  const content = await prepareContent(extractPostBody(doc(raw), thread, entry, '9'), digest);
+  expect(content.html.match(/\[Image omitted: external or unsupported asset\]/g)).toHaveLength(1);
+  expect(content.html.indexOf('Original before.')).toBeLessThan(content.html.indexOf('[Image omitted:'));
+  expect(content.html.indexOf('[Image omitted:')).toBeLessThan(content.html.indexOf('Original after.'));
+  expect(content.html).not.toMatch(/<img|\bsrc=|srcset=|onerror|asset-harbor|fixture:\/\//);
+  expect(JSON.stringify(content)).not.toContain('https://example.com/image.png');
+});
+
+test('empty whitespace inline runs do not become junk paragraphs', async () => {
+  const raw = page(bodyArticle('101', 'Original before.<br> \n<span> </span><br>Original after.'));
+  const content = await prepareContent(extractPostBody(doc(raw), thread, entry, '9'), digest);
+  expect(content.html.match(/<p /g)).toHaveLength(2);
+  expect(content.html).toContain('Original before.'); expect(content.html).toContain('Original after.');
+});

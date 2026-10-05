@@ -71,7 +71,7 @@ export async function importStory(value: string, repository: Repository, client:
       cachedKey = cached?.url ?? null; root = null;
       if (manifest.state !== 'COMPLETE') throw manifest.failure;
       cancelled(); total = manifest.entries.length; progress('saving');
-      await storage(() => repository.commitInitialManifest({ ...metadata, categoryId: manifest.category.id }, manifest));
+      await storage(() => repository.commitInitialManifest({ ...metadata, categoryId: manifest.category.id }, manifest, options.signal));
       story = await storage(() => repository.getStory(thread.storyId));
     }
     if (!story || !story.categoryId) throw new ImportFailure('storage', 'Stored primary manifest is unavailable.');

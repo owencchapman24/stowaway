@@ -8,10 +8,11 @@ import { createRepository, compileFixture } from '../../src/storage/repository';
 import { importStory } from '../../src/importing/import-story';
 import { RequestClient, type Transport } from '../../src/sources/spacebattles/request';
 import { bodyArticle, importDocuments, importRootUrl } from '../fixtures/import';
-import { page, threadUrl, indexUrl } from '../fixtures/spacebattles';
+import { page, threadUrl, indexUrl, index, row, range, rangeUrl } from '../fixtures/spacebattles';
 import { threadFromUrl } from '../../src/sources/spacebattles/url';
 import { prepareContent } from '../../src/content/sanitize';
 import { runDiagnostic } from '../../src/sources/spacebattles/diagnostic';
+import type { SqlValue } from '../../src/storage/database';
 
 const digest = async (value: string) => createHash('sha256').update(value).digest('hex');
 const asset = { relativePath: 'assets/11111111-1111-4111-8111-111111111111.png', byteLength: 2024 };
@@ -106,6 +107,28 @@ test('incomplete and failed manifests never create a persistent story', async ()
   expect(await repo.listStories()).toEqual([]);
 });
 
+test('conflicting-thread range persists nothing; corrected fresh import stores only the correct stable entries', async () => {
+  const documents = importDocuments();
+  documents.set(indexUrl, index(row('101', 2) + range(), { expected: 2 }));
+  documents.set(rangeUrl, page(row('202', 2)).replace('thread-9001', 'thread-9999'));
+  const refused = source(documents);
+  const failed = await importStory(threadUrl, repo, refused.client, digest);
+  expect(failed.failure?.code).toBe('incomplete'); expect(failed.story).toBeNull();
+  expect(await repo.listStories()).toEqual([]);
+  expect(await host.db.getAllAsync('SELECT * FROM threadmark_entries')).toEqual([]);
+  expect(await repo.listChapters()).toEqual([]);
+  expect(refused.requests).toEqual([importRootUrl, indexUrl, rangeUrl]);
+
+  documents.set(rangeUrl, page(row('102', 2)));
+  const corrected = source(documents);
+  const result = await importStory(threadUrl, repo, corrected.client, digest);
+  expect(result.failure).toBeNull(); expect(result.story).toMatchObject({ total: 2, downloaded: 2 });
+  expect((await repo.listContents(id)).map((entry) => entry.postId)).toEqual(['101', '102']);
+  expect((await repo.listChapters(id)).map((entry) => entry.id)).toEqual([id + ':post:101', id + ':post:102']);
+  expect((await importStory(threadUrl, repo, corrected.client, digest)).failure).toBeNull();
+  expect(corrected.requests).toEqual([importRootUrl, indexUrl, rangeUrl, threadUrl + 'page-2']);
+});
+
 test('the validated root is reused for primary bodies whose observed links target that document', async () => {
   const documents = importDocuments();
   documents.set(importRootUrl, documents.get(importRootUrl)!.replace('</body>', bodyArticle('101') + bodyArticle('102') + '</body>'));
@@ -144,6 +167,97 @@ test('cancel during unfinished content preparation commits no current body and s
   expect(await repo.listChapters(id)).toEqual([]);
   expect(fake.requests).toEqual([importRootUrl, indexUrl, threadUrl + 'page-2']);
   expect((await importStory(threadUrl, repo, source().client, digest)).story?.downloaded).toBe(3);
+});
+
+test('cancellation at saving creates no story/manifest and retry succeeds on the same write queue', async () => {
+  const abort = new AbortController();
+  const fake = source();
+  const result = await importStory(threadUrl, repo, fake.client, digest, { signal: abort.signal, onProgress(p) {
+    if (p.phase === 'saving') abort.abort();
+  } });
+  expect(result.failure?.code).toBe('cancelled'); expect(result.story).toBeNull();
+  expect(await repo.listStories()).toEqual([]);
+  expect(await host.db.getAllAsync('SELECT * FROM threadmark_entries')).toEqual([]);
+  expect(fake.requests).toEqual([importRootUrl, indexUrl]);
+  expect((await importStory(threadUrl, repo, source().client, digest)).story?.downloaded).toBe(3);
+});
+
+test('cancellation while manifest storage is queued preserves the fixture and commits no new manifest', async () => {
+  const fixture = await compileFixture(digest); await repo.seed(fixture, asset);
+  const chapter = fixture.chapters[0]!;
+  let release!: () => void; let reached!: () => void; let saving!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const ready = new Promise<void>((resolve) => { reached = resolve; });
+  const queued = new Promise<void>((resolve) => { saving = resolve; });
+  const held = repo.replaceChapterContent(chapter.id, chapter, async (phase) => {
+    if (phase === 'before-write') { reached(); await gate; }
+  });
+  await ready;
+  const abort = new AbortController();
+  const importing = importStory(threadUrl, repo, source().client, digest, { signal: abort.signal,
+    onProgress(p) { if (p.phase === 'saving') saving(); } });
+  await queued; abort.abort(); release(); await held;
+  const result = await importing;
+  expect(result.failure?.code).toBe('cancelled'); expect(await repo.getStory(id)).toBeNull();
+  expect(await repo.listContents(id)).toEqual([]);
+  expect(await repo.getChapter(chapter.id)).toMatchObject({ html: chapter.html, contentHash: chapter.contentHash });
+  expect(await repo.getStory(fixture.id)).toMatchObject({ total: 3, downloaded: 3 });
+  expect((await importStory(threadUrl, repo, source().client, digest)).story?.downloaded).toBe(3);
+});
+
+test('cancellation during manifest entry insertion rolls back the story and every entry; retry succeeds', async () => {
+  const abort = new AbortController();
+  const transaction = host.db.withExclusiveTransactionAsync.bind(host.db);
+  const boundary = jest.spyOn(host.db, 'withExclusiveTransactionAsync').mockImplementationOnce((work) => transaction(async (tx) => {
+    await work({ ...tx, async runAsync(sql, ...params) {
+      const result = await tx.runAsync(sql, ...params);
+      if (sql.startsWith('INSERT INTO threadmark_entries')) {
+        expect(await tx.getFirstAsync('SELECT COUNT(*) AS count FROM threadmark_entries')).toEqual({ count: 1 });
+        abort.abort();
+      }
+      return result;
+    } });
+  }));
+  const result = await importStory(threadUrl, repo, source().client, digest, { signal: abort.signal });
+  boundary.mockRestore();
+  expect(result.failure?.code).toBe('cancelled'); expect(result.story).toBeNull();
+  expect(await repo.listStories()).toEqual([]);
+  expect(await host.db.getAllAsync('SELECT * FROM threadmark_entries')).toEqual([]);
+  expect((await importStory(threadUrl, repo, source().client, digest)).story?.downloaded).toBe(3);
+});
+
+test('cancellation during final chapter FK validation rolls back only the current body and allows missing-only retry', async () => {
+  const abort = new AbortController();
+  const transaction = host.db.withExclusiveTransactionAsync.bind(host.db);
+  let checked = false;
+  const boundary = jest.spyOn(host.db, 'withExclusiveTransactionAsync');
+  const result = await importStory(threadUrl, repo, source().client, digest, { signal: abort.signal, onProgress(p) {
+    if (p.downloaded === 1 && !checked) {
+      checked = true;
+      boundary.mockImplementationOnce((work) => transaction(async (tx) => {
+        await work({ ...tx, async getFirstAsync<T>(sql: string, ...params: SqlValue[]) {
+          const row = await tx.getFirstAsync<T>(sql, ...params);
+          if (sql === 'PRAGMA foreign_key_check') {
+            expect(row).toBeNull();
+            expect(await tx.getFirstAsync('SELECT COUNT(*) AS count FROM chapters')).toEqual({ count: 2 });
+            abort.abort();
+          }
+          return row;
+        } });
+      }));
+    }
+  } });
+  boundary.mockRestore();
+  expect(checked).toBe(true); expect(result.failure?.code).toBe('cancelled');
+  expect(result.story).toMatchObject({ total: 3, downloaded: 1 });
+  expect((await repo.listContents(id)).map((entry) => entry.downloaded)).toEqual([true, false, false]);
+  const retained = await repo.getChapter(id + ':post:101');
+  expect(retained).not.toBeNull(); expect(await repo.getChapter(id + ':post:102')).toBeNull();
+  const retry = source();
+  expect((await importStory(threadUrl, repo, retry.client, digest)).story?.downloaded).toBe(3);
+  expect(retry.requests).toEqual([threadUrl + 'page-2', threadUrl + 'page-3']);
+  expect(await repo.getChapter(id + ':post:101')).toEqual(retained);
+  expect(await host.db.getAllAsync('PRAGMA foreign_key_check')).toEqual([]);
 });
 
 test('a source body with no readable sanitized text fails without marking it downloaded', async () => {
