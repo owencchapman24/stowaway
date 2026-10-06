@@ -112,16 +112,22 @@ Use only the already selected public stories, deliberate actions and ordinary un
 
 **CORE I1 PHYSICAL ACCEPTANCE PASSED. Natural live-source mutation cases remain physically unexercised. S2B deferred; full v0 incomplete.** Acceptance follow-up authorizes documentation/status cleanup, validation, a separate commit/push and PR preparation against main. No PR merge or next product slice is authorized.
 
-## Post-acceptance handoff fix — focused regression retest PENDING
+## Post-review handoff fix — focused physical retest PASSED
 
-The adversarial review of PR #5 found a reader navigation race when cancellation overlapped an unavoidable reconciliation COMMIT. The targeted fix blocks Read, Library, Resume and native Back/gesture removal until the update settles and the final SQL refresh completes. Cancel remains available. The earlier physical passes above are preserved; **this fix has not been physically tested**. Deterministic real-SQLite tests exercise the exact held-COMMIT mutation window, with native navigation/WebView surfaces mocked.
+**POST-REVIEW I1 NAVIGATION HANDOFF PHYSICAL RETEST PASSED.** Recorded **6 October 2026, America/New_York**, from Owen's supplied physical-iPhone report for fix commit **22c761dbd064c376bb610a3cbb72de4820abb642** on `feat/manual-update-reconciliation`, through Expo Go/Metro. This is user-reported evidence, not an agent-operated phone run or independent device/wire inspection. **CORE I1 PHYSICAL ACCEPTANCE PASSED** and the earlier physical passes above remain unchanged.
 
-On the updated branch, use the existing SDK 57 Expo Go/Metro setup and preserve the normal library. Use only the already selected stories and deliberate checks; stop on blocked/login/challenge. Do not reset storage or fabricate source mutations.
+The adversarial review of PR #5 found a reader navigation race when cancellation overlapped an unavoidable reconciliation COMMIT. The targeted fix blocks Read, Library, Resume and native Back/gesture removal until the update settles and the final SQL refresh completes. Cancel remains available. Deterministic real-SQLite tests exercise the exact held-COMMIT mutation window, with native navigation/WebView surfaces mocked; the physical observations below establish the reported native control behavior.
 
-- [ ] Without an update running, open a downloaded chapter, verify its saved passage, Previous/Next and Contents return to the same story; return to Library normally.
-- [ ] Start Check for Updates. While it runs, confirm downloaded Read controls and Library are disabled; Resume is disabled if present; Cancel remains usable. Attempt the iOS back swipe and any available native Back action: Contents must remain open.
-- [ ] Tap Cancel. Confirm exits stay blocked while work/refresh finishes. When controls re-enable, open a downloaded chapter and verify passage restoration, chapter title, Previous/Next and Contents. Return to Library and confirm counts agree with Contents. Repeat without cancelling and confirm normal navigation/gestures return after completion.
-- [ ] If a natural removal is available, after settlement verify the saved-unlisted chapter remains readable, both Previous/Next are disabled and Contents returns to its story.
-- [ ] If a natural rename/reorder is available, after settlement verify the reader's title/current order. Record unavailable mutations as NOT EXERCISED; a short unchanged check may also finish before a manual gesture/cancellation attempt can be made.
+- [x] Ordinary downloaded-chapter reading and saved passage restoration still worked.
+- [x] Previous / Next / Contents / Library navigation worked normally when no update was active.
+- [x] During Check for Updates, Read and Library navigation were blocked.
+- [x] During Check for Updates, native Back / swipe-back could not leave Story Contents.
+- [x] Cancel remained available during the operation.
+- [x] After Cancel, navigation remained blocked until the operation settled.
+- [x] After settlement, normal navigation became available again; opening a downloaded chapter showed coherent navigation and restored passage.
+- [x] A normal Check for Updates completed afterward, and ordinary navigation / gestures were restored normally.
 
-The exact post-guard/pre-COMMIT interleaving is deterministic automated evidence unless independently observed on the phone. Natural mutation cases remain otherwise physically unexercised. This retest does not establish S2B, native wire behavior or new source authorization. PR #5 remains unmerged.
+- [ ] **Resume Download — NOT PHYSICALLY EXERCISED:** the tested real stories were fully downloaded and did not display the control. Deterministic tests cover its disabled-during-operation behavior; this report does not establish a physical Resume pass.
+- [ ] **Natural live-source mutations — NOT PHYSICALLY EXERCISED:** new chapter, rename/reorder, removal, saved-unlisted reading and reappearance. Their conditional status above is unchanged.
+
+The exact post-guard/pre-COMMIT interleaving and delayed authoritative SQLite refresh remain deterministic automated evidence, not separately observed native transaction/read timing. The retest does not establish S2B, native wire behavior or new source authorization. S2B remains deferred and full v0 is incomplete. PR #5 remains unmerged; no next milestone or merge is authorized.
