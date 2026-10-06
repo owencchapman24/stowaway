@@ -1,4 +1,4 @@
-import { UUID, type LocalFiles } from '../storage/local-files';
+import { UUID, type LocalFiles } from '../storage/file-primitives';
 import { SOURCE_IMAGE_LIMITS, validateSourceImage } from './validate';
 import type { ImageFile } from './types';
 

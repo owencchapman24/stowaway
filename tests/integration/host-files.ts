@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { relativeFile, type LocalFiles } from '../../src/storage/local-files';
+import { relativeFile, type LocalFiles } from '../../src/storage/file-primitives';
 
 export function hostFiles(root: string): LocalFiles {
   const path = (relative: string) => join(root, relativeFile(relative));

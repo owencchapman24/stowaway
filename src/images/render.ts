@@ -1,6 +1,6 @@
 import { escapeHtml } from '../content/sanitize';
 import type { Chapter } from '../domain/types';
-import type { LocalFiles } from '../storage/local-files';
+import type { LocalFiles } from '../storage/file-primitives';
 import type { SourceImageFiles } from './files';
 import { placeholderBlocks } from './slots';
 import type { ChapterImage } from './types';

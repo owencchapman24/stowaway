@@ -2,7 +2,8 @@ import { Asset } from 'expo-asset';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 import type { Chapter, Locator, Preferences } from '../domain/types';
-import { assetPath, createLocalContentFiles, relativeFile, type LocalFiles } from './local-files';
+import { assetPath, createLocalContentFiles } from './local-files';
+import { relativeFile, type LocalFiles } from './file-primitives';
 import type { ChapterImage } from '../images/types';
 
 export function nativeFiles(root = Paths.document.uri): LocalFiles {
