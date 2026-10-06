@@ -140,8 +140,8 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   }
 
   const index = chapters.findIndex((chapter) => chapter.id === chapterId);
-  const previous = chapters[index - 1];
-  const next = chapters[index + 1];
+  const previous = index >= 0 ? chapters[index - 1] : undefined;
+  const next = index >= 0 ? chapters[index + 1] : undefined;
   return <SafeAreaView style={styles.page}>
     <Stack.Screen options={{ gestureEnabled: false }} />
     <Text style={styles.title} numberOfLines={2} accessibilityRole="header">{model?.chapter.title ?? 'Reader'}</Text>

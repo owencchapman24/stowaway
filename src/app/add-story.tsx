@@ -9,9 +9,13 @@ import { screenStyles as styles } from '../reader/screen-styles';
 import { useStorage } from '../storage/context';
 
 export default function AddStory() {
-  const { repository } = useStorage();
   const params = useLocalSearchParams<{ story?: string }>();
   const id = typeof params.story === 'string' ? params.story : '';
+  return <AddStoryForm key={id} id={id} />;
+}
+
+function AddStoryForm({ id }: { id: string }) {
+  const { repository } = useStorage();
   const [url, setUrl] = useState('');
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
@@ -57,6 +61,7 @@ export default function AddStory() {
   const status = prefilling ? 'Loading saved story…' : !progress ? 'Ready. Import starts only when you tap Import.' : {
     validating: 'Validating URL', manifest: `Fetching complete primary manifest: ${progress.total} entries discovered`,
     saving: `Manifest COMPLETE: ${progress.total} entries. Saving manifest`,
+    reconciling: 'Reconciling complete primary manifest',
     downloading: `Downloading text: ${progress.downloaded} / ${progress.total}${progress.title ? ` · ${progress.title}` : ''}`,
     completed: 'Completed. All primary text downloaded.', cancelled: 'Cancelled. Completed text is retained.', failed: 'Import stopped.',
   }[progress.phase];
