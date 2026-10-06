@@ -111,3 +111,17 @@ npm.cmd start
 Use only the already selected public stories, deliberate actions and ordinary unauthenticated access. Preserve normal storage; do not uninstall/clear app data, reset/reseed real stories or fabricate source changes. Stop on blocked/login/challenge; no copied sessions, proxies or bypasses. Record actual observed results and unexercised conditional cases without committing prose/raw pages/screenshots.
 
 **CORE I1 PHYSICAL ACCEPTANCE PASSED. Natural live-source mutation cases remain physically unexercised. S2B deferred; full v0 incomplete.** Acceptance follow-up authorizes documentation/status cleanup, validation, a separate commit/push and PR preparation against main. No PR merge or next product slice is authorized.
+
+## Post-acceptance handoff fix — focused regression retest PENDING
+
+The adversarial review of PR #5 found a reader navigation race when cancellation overlapped an unavoidable reconciliation COMMIT. The targeted fix blocks Read, Library, Resume and native Back/gesture removal until the update settles and the final SQL refresh completes. Cancel remains available. The earlier physical passes above are preserved; **this fix has not been physically tested**. Deterministic real-SQLite tests exercise the exact held-COMMIT mutation window, with native navigation/WebView surfaces mocked.
+
+On the updated branch, use the existing SDK 57 Expo Go/Metro setup and preserve the normal library. Use only the already selected stories and deliberate checks; stop on blocked/login/challenge. Do not reset storage or fabricate source mutations.
+
+- [ ] Without an update running, open a downloaded chapter, verify its saved passage, Previous/Next and Contents return to the same story; return to Library normally.
+- [ ] Start Check for Updates. While it runs, confirm downloaded Read controls and Library are disabled; Resume is disabled if present; Cancel remains usable. Attempt the iOS back swipe and any available native Back action: Contents must remain open.
+- [ ] Tap Cancel. Confirm exits stay blocked while work/refresh finishes. When controls re-enable, open a downloaded chapter and verify passage restoration, chapter title, Previous/Next and Contents. Return to Library and confirm counts agree with Contents. Repeat without cancelling and confirm normal navigation/gestures return after completion.
+- [ ] If a natural removal is available, after settlement verify the saved-unlisted chapter remains readable, both Previous/Next are disabled and Contents returns to its story.
+- [ ] If a natural rename/reorder is available, after settlement verify the reader's title/current order. Record unavailable mutations as NOT EXERCISED; a short unchanged check may also finish before a manual gesture/cancellation attempt can be made.
+
+The exact post-guard/pre-COMMIT interleaving is deterministic automated evidence unless independently observed on the phone. Natural mutation cases remain otherwise physically unexercised. This retest does not establish S2B, native wire behavior or new source authorization. PR #5 remains unmerged.

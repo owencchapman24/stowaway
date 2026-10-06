@@ -14,9 +14,10 @@ import { threadUrl } from './fixtures/spacebattles';
 
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
-  return { router: { push: jest.fn(), replace: jest.fn() },
+  return { router: { push: jest.fn(), replace: jest.fn() }, Stack: { Screen: () => null },
     useLocalSearchParams: jest.fn(), useFocusEffect: (callback: () => void) => useEffect(callback, [callback]) };
 });
+jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('../src/storage/context', () => ({ useStorage: jest.fn() }));
 jest.mock('../src/importing/native', () => ({ importNativeStory: jest.fn() }));
 let mockReaderProps: ChapterReaderProps;

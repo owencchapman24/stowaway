@@ -40,7 +40,7 @@ Cancellation checks run before work, after network/preparation, between manifest
 
 After reconciliation commits, cancellation/body failure does not undo its success time or new current/removed state. Each completed body remains; unfinished current bodies are pending. Close/reopen tests demonstrate coherent persisted state and explicit missing-only Resume; neither startup nor opening screens auto-resumes. Host close/reopen and injected boundaries are not real iPhone force-quits or hardware power-loss evidence.
 
-Contents shows checking/reconciling/downloading progress, Cancel, concise update result, typed source/storage/busy failures, both timestamps and Resume when current text is pending. No Check action is shown for the synthetic fixture. Leaving/backgrounding aborts active work. Story and Resume components are keyed by stable route identity; Contents also invalidates stale local reads and tracks focus/operation ownership. Late results, progress and actions cannot attach to another story. A retained outcome claiming another story is rejected.
+Contents shows checking/reconciling/downloading progress, Cancel, concise update result, typed source/storage/busy failures, both timestamps and Resume when current text is pending. No Check action is shown for the synthetic fixture. Backgrounding aborts active work. The post-acceptance correction below blocks leaving Contents until an update settles and its final local refresh completes. Story and Resume components are keyed by stable route identity; Contents also invalidates stale local reads and tracks focus/operation ownership. Late results, progress and actions cannot attach to another story. A retained outcome claiming another story is rejected.
 
 ## Validation and sequential review
 
@@ -124,3 +124,27 @@ git diff --check                     Passed
 Compatibility/Doctor used the metadata/cache access already needed in prior validation. No package/lockfile change or cloud build occurred. Host SQLite and Metro warnings remain informational. A separate sequential documentation review matched each checked item to Owen's report, preserved the approximate timestamp sequence without wire timing claims, kept Check retry distinct from missing-body Resume, and left natural mutations/saved-unlisted behavior and other unreported controls physically unexercised. The export is compilation evidence, not S2B.
 
 GitHub CLI is unavailable on PATH and in its standard installation locations. PR title: **I1: Manual SpaceBattles updates and reconciliation**. The prepared body is outside tracked Git at ignored **.tools/I1_PR_Body.md**. To create manually, open the [main-to-I1 comparison](https://github.com/owencchapman24/stowaway/compare/main...feat/manual-update-reconciliation?expand=1), confirm base **main** / compare **feat/manual-update-reconciliation**, paste that title and the saved body, then click **Create pull request**. No PR was created by this fallback and **no merge is authorized**. Source images/read-state/deletion/S2B and the next milestone remain unstarted.
+
+## Post-acceptance update/reader handoff correction — 6 October 2026
+
+PR #5's adversarial review at `4a67c523` reproduced a navigation race with real host SQLite and the actual reader component. A downloaded chapter could open after cancellation but before an unavoidable reconciliation COMMIT finished. The reader could retain the prior navigation list after its chapter became saved-unlisted. Text and locators were preserved. The prior physical acceptance used unchanged manifests and did not exercise this mutation window.
+
+The targeted correction disables Read, Return to Library and Resume Download for the entire update promise and final authoritative SQL refresh. Cancel remains available; calling abort alone never unlocks navigation. `usePreventRemove` from the installed `expo-router/react-navigation` blocks Back/route removal, and the Story screen temporarily disables its iOS gesture. Blocked actions are discarded, with no automatic deferred navigation. Navigation and gestures return after settlement/refresh. A superseded final read is retried before unlocking; a failed read clears stale chapter actions and exposes a storage error. The user can then return to Library. The reader still loads once from SQLite after navigation; no polling or database subscription is added.
+
+Eight new deterministic cases cover real COMPLETE update removal, rename, reorder, pre-COMMIT rollback and unchanged completion; a held boundary after the final cancellation guard; disabled Read/Library/native removal while Cancel remains usable; continued blocking during a delayed final read; saved-unlisted text/hash/locator preservation and disabled Previous/Next; final reader titles/current order; stale handler protection including Resume; refocus superseding a final read; and failed-read removal of stale actions. Native WebView/render files and navigation surfaces are mocked in these tests. Real SQLite transactions, reconciliation, operation ownership and reader code execute in the handoff suite; this is not physical-device evidence.
+
+**Focused physical regression retest pending.** Previously recorded core I1 acceptance and unrelated passes remain valid historical evidence. This fix has not been physically tested. Follow the new section in [I1_Device_Checklist.md](I1_Device_Checklist.md). Natural additions/removals/reappearance/rename/reorder remain otherwise physically unexercised; do not fabricate live changes or reset the normal library. S2B and full v0 remain incomplete.
+
+Only Story Contents sequencing, fixture tests and these two I1 documents change. Reconciliation/storage, same-story operation locking, source/network policy, deferred global FK-performance and S1-budget code remain unchanged. No live SpaceBattles requests or new product scope are included. The fix stays on `feat/manual-update-reconciliation` and updates the existing PR #5; no new PR or merge is authorized.
+
+Validation on Node **22.23.3** / npm **10.9.9**:
+
+```text
+npm.cmd run check                    TypeScript + lint + 223 tests / 20 suites passed
+npx.cmd expo install --check          Dependencies are up to date
+npx.cmd expo-doctor@latest            21/21 checks passed
+npx.cmd expo export --platform ios    Local iOS Hermes bundle + harbor.png exported to ignored dist/
+git diff --check                     Passed
+```
+
+Compatibility/Doctor used approved package metadata/cache access without changing dependencies. Metro recovered an unreadable local cache with a full crawl and the export passed; host SQLite/color warnings were informational. A separate sequential review of only this fix checked every Contents route-changing control, the installed native removal/gesture mechanism, cancellation through settlement/final refresh, saved-unlisted and renamed/reordered reader behavior, test boundaries and preserved physical evidence. No remaining correctness defect was identified in that pass. The review is not a fresh iPhone or wire-level inspection; the focused physical regression remains pending.
