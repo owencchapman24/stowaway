@@ -48,12 +48,13 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
         COALESCE(SUM(c.image_discovery = 'scanned'), 0) AS scanned
         FROM chapters c JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
         WHERE c.story_id = ? AND e.currently_listed = 1`, storyId);
-      const counts = await db.getFirstAsync<{ local: number; pending: number; omitted: number }>(`SELECT
+      const counts = await db.getFirstAsync<{ local: number; pending: number; omitted: number; mimeRetryable: number }>(`SELECT
         COALESCE(SUM(i.state = 'downloaded'), 0) AS local, COALESCE(SUM(i.state = 'pending'), 0) AS pending,
-        COALESCE(SUM(i.state = 'omitted'), 0) AS omitted FROM chapter_images i
+        COALESCE(SUM(i.state = 'omitted'), 0) AS omitted,
+        COALESCE(SUM(i.state = 'omitted' AND i.reason = 'content-type-mismatch'), 0) AS mimeRetryable FROM chapter_images i
         JOIN chapters c ON c.id = i.chapter_id JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
         WHERE c.story_id = ? AND e.currently_listed = 1`, storyId);
-      return { unknown: 0, mismatch: 0, scanned: 0, local: 0, pending: 0, omitted: 0, ...discovery, ...counts };
+      return { unknown: 0, mismatch: 0, scanned: 0, local: 0, pending: 0, omitted: 0, mimeRetryable: 0, ...discovery, ...counts };
     },
     async commitImageDiscovery(id: string, expectedHash: string, slots: ImageSlot[] | null, signal?: AbortSignal) {
       await write(async (tx) => {
@@ -78,8 +79,8 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
         if (!owner) throw new Error('Image result belongs to a different or unlisted story/chapter.');
         for (const change of changes) {
           cancelled(signal);
-          const slot = await tx.getFirstAsync<{ state: string }>('SELECT state FROM chapter_images WHERE chapter_id = ? AND slot = ?', chapter, change.slot);
-          if (!slot || slot.state === 'omitted') throw new Error('Unknown or permanently omitted image slot.');
+          const slot = await tx.getFirstAsync<{ state: string; reason: string | null }>('SELECT state, reason FROM chapter_images WHERE chapter_id = ? AND slot = ?', chapter, change.slot);
+          if (!slot || (slot.state === 'omitted' && slot.reason !== 'content-type-mismatch')) throw new Error('Unknown or permanently omitted image slot.');
           if ('file' in change) {
             validateImageReference(change.file);
             const file = change.file;

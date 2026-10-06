@@ -7,11 +7,11 @@ import { documentUrl, threadFromUrl } from '../sources/spacebattles/url';
 import type { Repository } from '../storage/repository';
 import type { SourceImageFiles } from './files';
 import type { ImageChange } from './repository';
-import { ImageRejected } from './validate';
-import type { ImageSummary } from './types';
+import { ImageRejected, normalizeImageMime } from './validate';
+import type { ImageMimeDiagnostic, ImageSummary } from './types';
 
 export interface ImageProgress { phase: 'discovering' | 'downloading' | 'completed' | 'cancelled' | 'failed'; title?: string; slot?: number; completed: number; total: number }
-export interface ImageResult { storyId: string; summary: ImageSummary | null; failure: S1Failure | ImportFailure | null }
+export interface ImageResult { storyId: string; summary: ImageSummary | null; failure: S1Failure | ImportFailure | null; mimeDiagnostics?: ImageMimeDiagnostic[] }
 export interface ImageOptions { signal?: AbortSignal; onProgress?: (progress: ImageProgress) => void }
 function cancelled(signal?: AbortSignal) { if (signal?.aborted) throw new S1Failure('cancelled', 'Image work cancelled; text and completed local images are retained.'); }
 async function storage<T>(work: () => Promise<T>): Promise<T> {
@@ -23,7 +23,7 @@ async function storage<T>(work: () => Promise<T>): Promise<T> {
 
 /** Caller owns the story. Batch up to eight completed references per transaction. */
 export async function downloadChapterImages(storyId: string, chapterId: string, repository: Repository,
-  client: RequestClient, files: SourceImageFiles, options: ImageOptions = {}) {
+  client: RequestClient, files: SourceImageFiles, options: ImageOptions & { onMime?: (diagnostic: ImageMimeDiagnostic) => void } = {}) {
   const images = await storage(() => repository.listChapterImages(chapterId));
   let completed = 0;
   const changes: ImageChange[] = [];
@@ -41,7 +41,9 @@ export async function downloadChapterImages(storyId: string, chapterId: string, 
   try {
     for (const image of images) {
       cancelled(options.signal);
-      if (image.state === 'omitted') continue;
+      // Explicit image work can reconsider only the old MIME compatibility veto.
+      // Other omissions remain permanent and still cause zero asset requests.
+      if (image.state === 'omitted' && image.reason !== 'content-type-mismatch') continue;
       if (image.state === 'downloaded' && image.file) {
         try { await files.read(image.file); completed++; continue; }
         catch { /* Explicit retry stages a fresh replacement; old reference stays until commit. */ }
@@ -57,9 +59,11 @@ export async function downloadChapterImages(storyId: string, chapterId: string, 
         }));
         releases.push(staged.release);
         changes.push({ slot: image.slot, file: staged.file });
+        options.onMime?.({ chapterId, slot: image.slot, receivedMime: normalizeImageMime(response.contentType), detectedFormat: staged.file.format, accepted: true });
       } catch (error) {
         if (!(error instanceof ImageRejected)) throw error;
         changes.push({ slot: image.slot, reason: error.reason });
+        if (error.mime) options.onMime?.({ chapterId, slot: image.slot, ...error.mime, accepted: false });
       }
       completed++;
       if (changes.length >= 8) await flush();
@@ -79,6 +83,7 @@ export async function downloadImages(storyId: string, repository: Repository, cl
   let cached: Document | null = null;
   let cachedKey: string | null = null;
   let failure: ImageResult['failure'] = null;
+  const mimeDiagnostics: ImageMimeDiagnostic[] = [];
   try {
     cancelled(options.signal); release = acquireStory(storyId);
     const story = await storage(() => repository.getStory(storyId));
@@ -113,6 +118,14 @@ export async function downloadImages(storyId: string, repository: Repository, cl
       }
       if (entry.discovery === 'saved-text-mismatch') continue;
       await downloadChapterImages(storyId, entry.id, repository, client, files, { ...options,
+        onMime: (diagnostic) => {
+          // Keep later MIME vetoes visible even after the success sample fills.
+          if (!diagnostic.accepted && mimeDiagnostics.length === 8) {
+            const success = mimeDiagnostics.findIndex((item) => item.accepted);
+            if (success >= 0) mimeDiagnostics.splice(success, 1);
+          }
+          if (mimeDiagnostics.length < 8) mimeDiagnostics.push(diagnostic);
+        },
         onProgress: (progress) => options.onProgress?.({ ...progress, title: entry.title }) });
     }
     cancelled(options.signal);
@@ -122,5 +135,5 @@ export async function downloadImages(storyId: string, repository: Repository, cl
   let summary: ImageSummary | null = null;
   try { summary = await repository.getImageSummary(storyId); } catch { /* Retain typed operation failure. */ }
   options.onProgress?.({ phase: failure ? (failure.code === 'cancelled' ? 'cancelled' : 'failed') : 'completed', completed: 0, total: 0 });
-  return { storyId, summary, failure };
+  return { storyId, summary, failure, mimeDiagnostics };
 }

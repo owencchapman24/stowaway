@@ -81,4 +81,16 @@ I2 provides no destructive normal-library diagnostic. Do not edit/delete/corrupt
 
 Resume Download, naturally new chapters, removal/reappearance, mismatch and unsupported images are conditional physical cases. Mark unavailable cases **unexercised**, not passed. New import/update image extraction, current-only work, ownership, slot identity and body/hash preservation also have deterministic evidence.
 
+## I. Aenys MIME compatibility retest
+
+Owen's first run on `[ASOIAF SI] Aenys, King of Dreams` was **38/38 text**, **58 slots**, initially **50 omitted / 8 pending**, then **0 local / 58 omitted / 0 pending**, with all eight downloads rejected as `content-type-mismatch`. Readable prose and correct placeholders were reported. **Real-image acceptance remains pending.**
+
+- [ ] Pull the MIME-fix commit on `feat/source-images`, run `npm.cmd ci`, restart Metro and load that implementation in the existing Expo Go project. Preserve the normal phone library; do not reinstall, clear data, reset, delete or re-import Aenys.
+- [ ] Open the already imported Aenys Contents. Confirm **38/38 text** and the existing **58 omitted / 0 local / 0 pending** image state, plus **8 previously rejected images can be retried** and **Retry Images**. Opening alone starts no source work.
+- [ ] Tap **Retry Images** once. This uses the existing eight slot/source mappings; no text-body discovery or Check for Updates is needed. Record final local/omitted/pending counts and any typed failure. The other 50 omissions remain untouched. If all eight responses still supply accepted raster bytes with compatible MIME, expect **8 local / 50 omitted / 0 pending**; record actual results rather than assuming this outcome.
+- [ ] Record the bounded **Image MIME (dev)** lines for those slots: chapter ID/slot, normalized received MIME, detected PNG/JPEG/WebP format and validated/rejected status. `validated` is not a persistence claim; compare local counts. For a remaining mismatch, report received MIME and detected format. Do not capture bytes, raw headers/pages, credentials or prose. Stop on blocked/login/challenge results; do not bypass them.
+- [ ] Open a chapter containing a newly local image. Confirm it appears at the expected placeholder block, surrounding prose remains readable, no fixture image appears, and the saved passage/font/theme remain usable. Text stays **38/38**.
+- [ ] Leave/reopen without another source action and confirm local reuse. Then leave via Contents, disable Wi-Fi/cellular while the project is already running, and reopen that chapter to check local image/text rendering and passage restoration. This does not establish S2B or wire-level behavior.
+- [ ] Report the implementation SHA, actual counts, MIME/format metadata, image rendering and already-running offline result. Leave every unexercised check pending; do not infer full I2 acceptance from a MIME fix.
+
 **Stop after recording observations for Owen. I2 acceptance, PR creation/merge and the next milestone require Owen's subsequent instruction. S2B remains deferred.**

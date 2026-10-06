@@ -16,7 +16,7 @@ The sanitizer observer records existing omission-placeholder block IDs. Its cano
 
 Existing downloaded/current chapters are scanned only after **Download Images**. The current source body is sanitized through the saved-text path. Version, hash, exact canonical HTML, block IDs and links must match the saved chapter before slots attach. An image URL/alt-only change ignored by that path does not replace prose. A mismatch persists bounded unavailability with no guessed mapping, body replacement or locator invalidation, and is not automatically retried. This is a mapping safety check, not general historical-edit detection.
 
-New import/update bodies produce descriptors from the **same fetched body**. Text and discovery metadata commit together; bytes follow afterward. A failed image never rolls back committed text. Permanent image failures become omissions; source/network/storage interruption stops the foreground operation with earlier text/local refs retained. Ordinary unchanged updates and duplicate import/resume never backfill historical bodies. Download/Retry Images handles old discovery and pending/repair work explicitly.
+New import/update bodies produce descriptors from the **same fetched body**. Text and discovery metadata commit together; bytes follow afterward. A failed image never rolls back committed text. Permanent image failures become omissions; source/network/storage interruption stops the foreground operation with earlier text/local refs retained. Ordinary unchanged updates and duplicate import/resume never backfill historical bodies. Download/Retry Images handles old discovery and pending/repair work explicitly. Only omissions whose stored reason is `content-type-mismatch` can also be reconsidered by deliberate image work; all other omissions remain permanent.
 
 ## Source and binary request boundary
 
@@ -30,9 +30,19 @@ S1 snapshots the shared request count at diagnostic start, so prior image traffi
 
 ## Raster validation and budgets
 
-No processing/decoder dependency was added. Accepted formats are PNG, JPEG and WebP. Byte parsers independently check signatures/container lengths and dimensions: PNG requires IHDR, supported depth/color/compression/filter/interlace, valid chunk CRCs/order, IDAT and final IEND; JPEG walks marker lengths, a supported 8-bit SOF, SOS/entropy marker structure and terminal EOI; WebP walks exact RIFF/chunk lengths/padding and VP8/VP8L/VP8X dimensions. APNG control/data markers, WebP animation flags/ANIM/ANMF, GIF/SVG/XML/HTML/arbitrary content, truncation, invalid/zero dimensions and MIME/byte mismatches are rejected. Missing/opaque MIME still requires valid raster bytes.
+No processing/decoder dependency was added. Accepted formats are PNG, JPEG and WebP. Byte parsers independently check signatures/container lengths and dimensions: PNG requires IHDR, supported depth/color/compression/filter/interlace, valid chunk CRCs/order, IDAT and final IEND; JPEG walks marker lengths, a supported 8-bit SOF, SOS/entropy marker structure and terminal EOI; WebP walks exact RIFF/chunk lengths/padding and VP8/VP8L/VP8X dimensions. APNG control/data markers, WebP animation flags/ANIM/ANMF, GIF/SVG/XML/HTML/arbitrary content, truncation and invalid/zero dimensions are rejected.
+
+Content-Type is a secondary veto after all byte checks. Accepted normalized labels are `image/png`, `image/jpeg`, `image/jpg`, `image/pjpeg`, `image/webp` and `application/octet-stream`; missing/blank MIME remains permitted only with valid raster bytes. Case and surrounding whitespace are normalized, parameters are discarded, and disagreement among those raster labels does not reject independently validated bytes. HTML/XHTML, XML/SVG, GIF, AVIF, APNG and every other unsupported or malformed label still reject even valid accepted raster bytes. Bytes alone determine the actual format, generated extension, dimensions, animation checks and limits. No byte parser was changed for MIME compatibility.
 
 Budgets are **2,000,000 compressed bytes**, **2,048 pixels per axis**, **4,194,304 pixels total**. These match the conservative existing fixture dimension/byte ceilings and bound a typical four-byte decoded surface to about 16 MiB. They are Stowaway application limits, not SpaceBattles rules. Validators establish bounded raster structure, not complete decoder correctness; a native decode failure still degrades through the reader's existing local-image error placeholder. The original constant-black lossless WebP fixture decoded in the host image viewer; the lossy VP8 header fixture exercises structural parsing only. Actual iPhone decoding remains physical acceptance work.
+
+### Physical MIME failure and explicit retry
+
+Owen reported that `[ASOIAF SI] Aenys, King of Dreams` imported **38/38 text chapters**, discovered **58 slots (50 omitted, 8 pending)**, then finished image work at **0 local, 58 omitted, 0 pending**. All eight previously eligible downloads became `content-type-mismatch`; placeholders and prose remained usable. This is reported phone evidence of failure, not real-image acceptance or wire inspection. The old exact MIME/byte-format equality gate ran after structural validation; the actual response MIME values were not captured, so no particular live alias is asserted.
+
+The existing v4 reason identifies those eight retry candidates without a migration or reset. Contents shows **Retry Images** and the retryable count even when every slot is omitted. Opening screens still performs no source work. A deliberate retry uses existing slot mappings and source URLs, skips other omissions and valid local files, and commits fresh validated references through the unchanged staging/transaction order. Network/access failure or cancellation retains untouched MIME omissions for a later explicit retry. No body rescan, text replacement or manifest check is required for this already-scanned story.
+
+Each operation returns at most eight transient MIME diagnostics, prioritizing rejections over successful samples, shown only by the development Contents UI: chapter ID, slot, normalized received MIME, byte-detected accepted format and validated/rejected status. The media-type token is bounded to 97 characters; malformed/overlong tokens or CR/LF/NUL values become `invalid`, missing MIME becomes `(missing)`, and parameters are discarded. Diagnostics contain no bytes, prose, source URLs, credentials or raw headers, and are neither logged nor persisted. `validated` describes byte/MIME validation, not successful reference commit; use authoritative local counts for persistence. The [Aenys retest](I2_Device_Checklist.md#i-aenys-mime-compatibility-retest) remains pending.
 
 ## File/reference recovery and cleanup
 
@@ -60,7 +70,7 @@ Story Contents shows scanned/unknown/mismatch and local/omitted/pending counts s
 
 The implementation adds deterministic extraction/byte/network tests, real host SQLite/files/recovery/operation stress tests, image screen/settlement tests and bridge logical-block restoration cases. All 223 baseline tests remain; historical v3-specific tests explicitly target v3 while new migration tests exercise latest v4. No live transport or story captures/prose/image bytes are used. Synthetic PNG/JPEG bytes and generated WebP fixtures are original host test inputs.
 
-Final validation used Node **22.23.3**:
+Original feature-candidate validation used Node **22.23.3** (follow-up validation is recorded below):
 
 | Command | Result |
 | --- | --- |
@@ -83,7 +93,7 @@ The separate sequential completed-diff review covered production modules, integr
 | CSP | Existing `img-src 'self' file:` and disabled network/media/font/source-script policy remain; trusted app bridge only. |
 | Local paths | Exact generated UUID source namespace, extension/metadata validation and injected relative-file guard reject absolute/traversal/foreign names. |
 | Redirects/origin | Exact HTTPS origin at input and every hop; external Location is refused before follow. Unexpected transport-followed URL stops blocked. Native transport behavior is not wire-verified. |
-| MIME/magic | Independent raster signatures/containers and exact recognized MIME matching; filename cannot authorize bytes. HTML/XML/SVG/arbitrary/truncated and mismatched MIME fixtures reject. |
+| MIME/magic | Independent raster signatures/containers remain authoritative. The bounded MIME allowlist tolerates safe raster-label disagreement; HTML/XHTML/XML/SVG/GIF/AVIF/other unsupported labels veto even valid raster bytes. Filename/MIME cannot authorize invalid bytes or control the local extension. |
 | Animation | GIF/unsupported formats, APNG markers and WebP animation flags/chunks reject. |
 | Budgets | Content-Length and independent streamed-byte cap; parser/reference/local pre-read dimensions/bytes/digest validation. Oversized transient HTTP failures stay retryable. |
 | Traversal/overwrite | Source names never become paths. Exclusive fresh generated file creation refuses collision; old referenced files remain until new reference commits. |
@@ -95,7 +105,17 @@ The separate sequential completed-diff review covered production modules, integr
 
 This audit establishes code/host-test evidence. No phone run or wire-level result is claimed. The [physical checklist](I2_Device_Checklist.md) covers v3 preservation, deliberate natural discovery/local rendering, already-running offline regeneration, practical cancellation/relaunch/retry, natural omissions, host-only missing/corrupt recovery and reader/I1/navigation regression.
 
-### Exact changed-file inventory (37 files)
+### MIME compatibility follow-up validation
+
+The narrow MIME follow-up adds **61 deterministic cases**: 50 MIME/byte-policy cases, nine host SQLite/files/download cases and two Contents UI cases. All prior cases remain; the old benign PNG-bytes/`image/jpeg` assertion now expects byte-authoritative acceptance, while its HTML/SVG rejection cases remain intact. Coverage includes every allowed raster-label/byte-format pairing, JPEG aliases, normalization/opaque MIME, unsupported labels with valid raster bytes, invalid/animated/oversized/trailing-HTML bytes under allowed labels, byte-derived extensions, the synthetic 58-slot/eight-old-failure retry, unchanged text/locators/schema, cancellation/access stopping, permanent non-MIME omissions and bounded/redacted/development-only diagnostics including a later rejection after successful samples.
+
+Validation on Node **22.23.3**: `npm.cmd run check` passed TypeScript/lint and **393 tests / 23 suites**; `npx.cmd expo install --check` reported dependencies up to date; `npx.cmd expo-doctor@latest` passed **21/21**; `npx.cmd expo export --platform ios` exported the **1,248-module iOS Hermes bundle**; working/staged `git diff --check` passed. No dependency/lockfile changes or live SpaceBattles requests were made. Generated output/logs remain ignored.
+
+A separate sequential diff/security review verified the unchanged byte parsers and budgets, unsupported MIME vetoes even for accepted raster bytes, conservative pre-validation login/challenge detection, byte-derived local format/extension, unchanged fresh-file/reference ordering and ownership checks, and the reason-specific deliberate retry boundary. Review refined the bounded diagnostic sample to retain later MIME rejections in preference to successes; the added regression and final check/export passed. No blocking finding remains. This is host evidence only; the Aenys image-rendering/offline retest and physical I2 acceptance remain pending.
+
+Follow-up files: `src/images/validate.ts`, `src/images/types.ts`, `src/images/download.ts`, `src/images/repository.ts`, `src/images/summary.ts`, `src/app/story.tsx`, `tests/i2-mime.test.ts`, `tests/i2-images.test.ts`, `tests/integration/i2-images.test.ts`, `tests/i1-screens.test.tsx`, `docs/I2_Source_Images.md`, `docs/I2_Device_Checklist.md`.
+
+### Original feature changed-file inventory (37 files)
 
 ```text
 AGENTS.md

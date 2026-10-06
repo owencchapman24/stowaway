@@ -78,8 +78,9 @@ test('WebP ANIM/ANMF markers and corrupt chunk lengths cannot hide in a complete
   }
   const bad = Buffer.from(webp()); bad.writeUInt32LE(9999, 16); expect(() => validateSourceImage(bad)).toThrow();
 });
-test.each(['image/jpeg', 'text/html', 'image/svg+xml'])('PNG bytes with %s are rejected independently of filename', (mime) => {
-  expect(() => validateSourceImage(png(), mime)).toThrow('content-type-mismatch');
+test.each(['image/jpeg', 'text/html', 'image/svg+xml'])('PNG bytes with %s obey the secondary MIME compatibility policy', (mime) => {
+  if (mime === 'image/jpeg') expect(validateSourceImage(png(), mime).format).toBe('png');
+  else expect(() => validateSourceImage(png(), mime)).toThrow('content-type-mismatch');
 });
 test('missing/opaque MIME is safe only with accepted byte structure', () => {
   expect(validateSourceImage(png(), 'application/octet-stream').format).toBe('png');

@@ -121,7 +121,7 @@ function Contents({ id }: { id: string }) {
     completed: 'Image work finished. See local, omitted and pending counts.',
     cancelled: 'Image work cancelled. Text and completed local images retained.', failed: 'Image work stopped. Text is retained.',
   }[imageProgress.phase] : null;
-  const imageAction = imageSummary?.local ? 'Retry Images' : 'Download Images';
+  const imageAction = imageSummary?.local || imageSummary?.mimeRetryable ? 'Retry Images' : 'Download Images';
   const rows = [...entries.map((entry) => ({ ...entry, saved: false })), ...saved.map((entry) => ({ ...entry, saved: true }))];
   return <SafeAreaView style={styles.page}>
     <Stack.Screen options={{ gestureEnabled: !running }} />
@@ -135,7 +135,7 @@ function Contents({ id }: { id: string }) {
         {story.source === 'spacebattles' && <>
           <Text>Text and images have separate download states. Only primary Threadmarks are included.</Text>
           {imageSummary && <Text>{describeImages(imageSummary)}</Text>}
-          {!!imageSummary && (imageSummary.unknown > 0 || imageSummary.pending > 0 || imageSummary.local > 0) &&
+          {!!imageSummary && (imageSummary.unknown > 0 || imageSummary.pending > 0 || imageSummary.local > 0 || !!imageSummary.mimeRetryable) &&
             <Control label={imageAction} text={imageAction} disabled={running} onPress={() => { void runOperation(true); }} />}
           <Control label="Check for Updates" text="Check for Updates" disabled={running} onPress={() => { void runOperation(); }} />
           {story.lastUpdateAttemptAt !== null && <Text>Last update attempt: {new Date(story.lastUpdateAttemptAt).toLocaleString()}</Text>}
@@ -151,6 +151,9 @@ function Contents({ id }: { id: string }) {
       {outcome?.failure && <Text accessibilityRole="alert">{outcome.failure.code}: {outcome.failure.message}</Text>}
       {imageStatus && <Text accessibilityLiveRegion="polite">{imageStatus}</Text>}
       {imageOutcome?.failure && <Text accessibilityRole="alert">{imageOutcome.failure.code}: {imageOutcome.failure.message}</Text>}
+      {__DEV__ && imageOutcome?.mimeDiagnostics?.map((diagnostic) => <Text selectable key={`${diagnostic.chapterId}:${diagnostic.slot}`}>
+        {`Image MIME (dev): ${diagnostic.chapterId} · slot ${diagnostic.slot + 1} · received ${diagnostic.receivedMime ?? '(missing)'} · detected ${diagnostic.detectedFormat} · ${diagnostic.accepted ? 'validated' : 'rejected'}`}
+      </Text>)}
       {error && <Text accessibilityRole="alert">{error}</Text>}
       <Text accessibilityRole="header">Primary Threadmarks</Text>
     </View>} renderItem={({ item }) => <View style={styles.section}>

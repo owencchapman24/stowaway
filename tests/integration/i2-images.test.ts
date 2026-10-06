@@ -13,7 +13,7 @@ import { ORIGIN, threadFromUrl } from '../../src/sources/spacebattles/url';
 import { prepareContent } from '../../src/content/sanitize';
 import { importStory, updateStory } from '../../src/importing/import-story';
 import type { StoryMetadata } from '../../src/domain/types';
-import { png } from '../fixtures/images';
+import { jpeg, png, webp } from '../fixtures/images';
 import { bodyArticle, storyHeader } from '../fixtures/import';
 import { threadUrl, page, index, indexUrl, tabs, row } from '../fixtures/spacebattles';
 import { hostSqlite } from './host-sqlite';
@@ -198,6 +198,84 @@ test('invalid image bytes are an omission, successful new text remains committed
   jest.spyOn(fake.client, 'getImage').mockImplementation(async (url, options) => ({ ...await original(url, options), bytes: Buffer.from('<svg>Invalid raster</svg>') }));
   const result = await importStory(thread.url, repo, fake.client, digest, { imageFiles });
   expect(result.failure).toBeNull(); expect(await repo.getStory(id)).toMatchObject({ downloaded: 1, total: 1 }); expect(await repo.getImageSummary(id)).toMatchObject({ omitted: 1, local: 0 });
+});
+
+test.each([['png', png(), 'image/jpeg'], ['jpeg', jpeg(), 'image/webp'], ['webp', webp(), 'image/jpg']] as const)('%s local extension follows validated bytes despite MIME and source filename', async (format, bytes, mime) => {
+  const chapter = await seed(markup(), true), fake = source(), original = fake.client.getImage.bind(fake.client);
+  jest.spyOn(fake.client, 'getImage').mockImplementation(async (url, options) => ({ ...await original(url, options), bytes, contentType: mime }));
+  const result = await run(fake), image = (await repo.listChapterImages(chapterId))[0]!;
+  expect(result.failure).toBeNull(); expect(image.sourceUrl).toMatch(/\.png$/);
+  expect(image.file).toMatchObject({ format }); expect(image.file!.relativePath).toMatch(new RegExp(`\\.${format}$`));
+  expect(await imageFiles.read(image.file!)).toEqual(bytes); expect(await repo.getChapter(chapterId)).toEqual(chapter);
+  expect(result.mimeDiagnostics).toEqual([{ chapterId, slot: 0, receivedMime: mime, detectedFormat: format, accepted: true }]);
+});
+test('stored 58-slot/8-MIME-omission library retries only those slots, preserves text/locator, and never refetches bodies or external images', async () => {
+  const body = '<p>Generated before.</p>' + '<img src="https://example.com/external.png">'.repeat(50) + markup(8);
+  const chapter = await seed(body, true), locator = await repo.getLocator(chapterId);
+  await repo.commitImageResults(id, chapterId, Array.from({ length: 8 }, (_, i) => ({ slot: i + 50, reason: 'content-type-mismatch' as const })));
+  const slots = await repo.listChapterImages(chapterId);
+  host.close(); host = hostSqlite(join(folder, 'test.db')); await migrate(host.db); repo = createRepository(host.db);
+  expect(await repo.getImageSummary(id)).toMatchObject({ local: 0, omitted: 58, pending: 0, mimeRetryable: 8 });
+  const fake = source(), original = fake.client.getImage.bind(fake.client);
+  jest.spyOn(fake.client, 'getImage').mockImplementation(async (url, options) => ({ ...await original(url, options), contentType: 'image/jpg' }));
+  const result = await run(fake);
+  expect(result.failure).toBeNull(); expect(result.summary).toMatchObject({ local: 8, omitted: 50, pending: 0, mimeRetryable: 0 });
+  expect(fake.calls).toHaveLength(8); expect(fake.calls.every((url) => url.startsWith(`${ORIGIN}/attachments/`))).toBe(true);
+  const after = await repo.listChapterImages(chapterId); expect(after).toHaveLength(58); expect(after.slice(0, 50)).toEqual(slots.slice(0, 50));
+  expect(after.map(({ slot, blockId, sourceUrl }) => ({ slot, blockId, sourceUrl }))).toEqual(slots.map(({ slot, blockId, sourceUrl }) => ({ slot, blockId, sourceUrl })));
+  expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
+  expect(await repo.getStory(id)).toMatchObject({ downloaded: 1, total: 1 }); expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 4 });
+  expect(result.mimeDiagnostics).toHaveLength(8);
+  const retry = source(); await run(retry); expect(retry.calls).toEqual([]);
+});
+test('MIME diagnostics are transient and capped at eight, with no persisted headers or rejected files', async () => {
+  await seed(markup(12), true); const fake = source(), original = fake.client.getImage.bind(fake.client);
+  jest.spyOn(fake.client, 'getImage').mockImplementation(async (url, options) => ({ ...await original(url, options), contentType: ' TEXT/HTML ; token=secret; filename=private.jpg' }));
+  const result = await run(fake);
+  expect(result.mimeDiagnostics).toHaveLength(8);
+  expect(result.mimeDiagnostics![0]).toEqual({ chapterId, slot: 0, receivedMime: 'text/html', detectedFormat: 'png', accepted: false });
+  expect(JSON.stringify(result.mimeDiagnostics)).not.toMatch(/secret|private|filename|token/);
+  expect(await repo.getImageSummary(id)).toMatchObject({ local: 0, omitted: 12, mimeRetryable: 12 });
+  expect(JSON.stringify(await repo.listChapterImages(chapterId))).not.toContain('text/html'); expect(files.list('source-assets')).toEqual([]);
+});
+test('a later MIME veto stays visible after eight successful raster diagnostics fill the sample', async () => {
+  await seed(markup(10), true); const fake = source(), original = fake.client.getImage.bind(fake.client);
+  jest.spyOn(fake.client, 'getImage').mockImplementation(async (url, options) => ({ ...await original(url, options),
+    contentType: url.endsWith('generated-9.png') ? 'image/svg+xml' : 'image/jpg' }));
+  const result = await run(fake);
+  expect(result.summary).toMatchObject({ local: 9, omitted: 1, mimeRetryable: 1 }); expect(result.mimeDiagnostics).toHaveLength(8);
+  expect(result.mimeDiagnostics).toContainEqual({ chapterId, slot: 9, receivedMime: 'image/svg+xml', detectedFormat: 'png', accepted: false });
+});
+test('non-MIME omissions remain permanent at both the downloader and reference transaction boundary', async () => {
+  await seed(markup(2), true);
+  await repo.commitImageResults(id, chapterId, [{ slot: 0, reason: 'invalid-bytes' }, { slot: 1, reason: 'animated' }]);
+  const before = await repo.listChapterImages(chapterId), fake = source();
+  expect((await run(fake)).failure).toBeNull(); expect(fake.calls).toEqual([]);
+  expect(await repo.getImageSummary(id)).toMatchObject({ omitted: 2, mimeRetryable: 0 });
+  const staged = await imageFiles.stage(png());
+  try {
+    await expect(repo.commitImageResults(id, chapterId, [{ slot: 0, file: staged.file }])).rejects.toThrow('permanently omitted');
+    await expect(repo.commitImageResults(id, chapterId, [{ slot: 1, reason: 'content-type-mismatch' }])).rejects.toThrow('permanently omitted');
+  } finally { staged.release(); }
+  expect(await repo.listChapterImages(chapterId)).toEqual(before);
+});
+test('cancelled MIME retry keeps earlier commits and untouched remaining omissions for explicit retry', async () => {
+  const chapter = await seed(markup(3), true), locator = await repo.getLocator(chapterId);
+  await repo.commitImageResults(id, chapterId, [0, 1, 2].map((slot) => ({ slot, reason: 'content-type-mismatch' as const })));
+  const controller = new AbortController(); let requested = 0;
+  const fake = source(undefined, async () => { if (++requested === 2) controller.abort(); });
+  expect((await run(fake, controller.signal)).failure?.code).toBe('cancelled');
+  expect(await repo.getImageSummary(id)).toMatchObject({ local: 1, omitted: 2, pending: 0, mimeRetryable: 2 });
+  const retry = source(); await run(retry); expect(retry.calls).toHaveLength(2);
+  expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
+});
+test('safe raster MIME cannot hide a login/challenge while retrying an old MIME omission', async () => {
+  await seed(markup(), true); await repo.commitImageResults(id, chapterId, [{ slot: 0, reason: 'content-type-mismatch' }]);
+  const transport = jest.fn(async (url) => ({ url, status: 200, bodyUsed: true, headers: { get: () => 'image/jpg' }, text: async () => '',
+    arrayBuffer: async () => new Uint8Array(Buffer.from('<html><title>Log in</title></html>')).buffer }));
+  const client = new RequestClient(transport, { now: () => 0, sleep: async () => {} });
+  expect((await run({ calls: [], client })).failure?.code).toBe('challenge'); expect(transport).toHaveBeenCalledTimes(1);
+  expect(await repo.getImageSummary(id)).toMatchObject({ local: 0, omitted: 1, mimeRetryable: 1 }); expect(files.list('source-assets')).toEqual([]);
 });
 test('same-story images reject import/update/resume overlap; story A cannot mutate story B', async () => {
   await seed(); let reached!: () => void, release!: () => void;

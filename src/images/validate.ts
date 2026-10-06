@@ -1,10 +1,22 @@
 import { IMAGE_LIMITS } from '../content/image';
-import type { ImageFile, ImageReason } from './types';
+import type { ImageFile, ImageMimeDiagnostic, ImageReason } from './types';
 
 // Application phone-safety budgets; fixture/S2A validation stays unchanged.
 export const SOURCE_IMAGE_LIMITS = { ...IMAGE_LIMITS, maxPixels: 2048 * 2048 };
 export class ImageRejected extends Error {
-  constructor(readonly reason: ImageReason) { super(`Image omitted: ${reason}`); this.name = 'ImageRejected'; }
+  constructor(readonly reason: ImageReason, readonly mime?: Pick<ImageMimeDiagnostic, 'receivedMime' | 'detectedFormat'>) {
+    super(`Image omitted: ${reason}`); this.name = 'ImageRejected';
+  }
+}
+const compatibleMime = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/pjpeg', 'image/webp', 'application/octet-stream']);
+/** Only a bounded media-type token survives; parameters and raw headers never enter diagnostics. */
+export function normalizeImageMime(contentType?: string | null): string | null {
+  if (!contentType) return null;
+  if (/[\r\n\0]/.test(contentType)) return 'invalid';
+  const end = contentType.indexOf(';');
+  const mime = contentType.slice(0, end < 0 ? undefined : end).trim().toLowerCase();
+  if (!mime && end < 0) return null;
+  return /^[a-z0-9][a-z0-9.+_-]{0,47}\/[a-z0-9][a-z0-9.+_-]{0,47}$/.test(mime) ? mime : 'invalid';
 }
 const reject = (reason: ImageReason = 'invalid-bytes'): never => { throw new ImageRejected(reason); };
 const ascii = (b: Uint8Array, start: number, length: number) => String.fromCharCode(...b.slice(start, start + length));
@@ -126,7 +138,9 @@ export function validateSourceImage(bytes: Uint8Array, contentType?: string | nu
   const [width, height] = size!;
   if (!width || !height) reject();
   if (width > SOURCE_IMAGE_LIMITS.maxDimension || height > SOURCE_IMAGE_LIMITS.maxDimension || width * height > SOURCE_IMAGE_LIMITS.maxPixels) reject('over-dimension-budget');
-  const mime = contentType?.split(';')[0]?.trim().toLowerCase();
-  if (mime && mime !== 'application/octet-stream' && mime !== `image/${format!}`) reject('content-type-mismatch');
+  // Bytes have already passed every structural/animation/budget check. A safe
+  // raster label may be inaccurate; HTML/XML/unsupported labels remain a veto.
+  const mime = normalizeImageMime(contentType);
+  if (mime && !compatibleMime.has(mime)) throw new ImageRejected('content-type-mismatch', { receivedMime: mime, detectedFormat: format! });
   return { format: format!, width, height, byteLength: bytes.length };
 }

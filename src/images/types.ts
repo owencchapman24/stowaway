@@ -25,4 +25,10 @@ export interface ChapterImage extends Omit<ImageSlot, 'state'> {
 export interface ImageSummary {
   unknown: number; mismatch: number; scanned: number;
   local: number; pending: number; omitted: number;
+  mimeRetryable?: number;
+}
+/** Bounded, transient diagnostics; never part of the persisted image reference. */
+export interface ImageMimeDiagnostic {
+  chapterId: string; slot: number;
+  receivedMime: string | null; detectedFormat: ImageFile['format']; accepted: boolean;
 }

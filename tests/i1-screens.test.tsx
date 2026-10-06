@@ -259,6 +259,33 @@ test('I2 fixture has no source-image action even with unexpected source summary 
   render(<StoryContents />); await waitFor(() => expect(screen.getByText(story.title)).toBeTruthy());
   expect(screen.queryByLabelText('Download Images')).toBeNull(); expect(screen.queryByLabelText('Retry Images')).toBeNull(); expect(imageRun).not.toHaveBeenCalled();
 });
+
+test('I2 all-omitted MIME failures expose deliberate Retry Images and bounded dev MIME/format metadata', async () => {
+  repository.getImageSummary.mockResolvedValue({ ...unknownImages, unknown: 0, scanned: 2, omitted: 58, mimeRetryable: 8 });
+  const local = { ...unknownImages, unknown: 0, scanned: 2, local: 8, omitted: 50, mimeRetryable: 0 };
+  imageRun.mockImplementation(async () => {
+    repository.getImageSummary.mockResolvedValue(local);
+    return { storyId: story.id, summary: local, failure: null, mimeDiagnostics: [{ chapterId: entry('101', '').id, slot: 50, receivedMime: 'image/jpg', detectedFormat: 'png', accepted: true }] };
+  });
+  render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Retry Images')).toBeEnabled());
+  expect(imageRun).not.toHaveBeenCalled(); expect(screen.getByText(/8 previously rejected images can be retried/)).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Retry Images'));
+  await waitFor(() => expect(screen.getByText('Images: 8 local · 50 omitted · 0 pending')).toBeTruthy());
+  expect(screen.getByText(/Image MIME \(dev\):.*slot 51.*received image\/jpg.*detected png.*validated/)).toBeTruthy();
+  expect(screen.getByText('2 / 2 text chapters downloaded')).toBeTruthy();
+});
+test('I2 MIME metadata is hidden outside development mode', async () => {
+  const dev = __DEV__; Reflect.set(global, '__DEV__', false);
+  try {
+    repository.getImageSummary.mockResolvedValue(unknownImages);
+    imageRun.mockResolvedValue({ storyId: story.id, summary: unknownImages, failure: null,
+      mimeDiagnostics: [{ chapterId: entry('101', '').id, slot: 0, receivedMime: 'text/html', detectedFormat: 'png', accepted: false }] });
+    render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Download Images')).toBeEnabled());
+    fireEvent.press(screen.getByLabelText('Download Images')); await waitFor(() => expect(imageRun).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByLabelText('Cancel images')).toBeNull());
+    expect(screen.queryByText(/Image MIME \(dev\)/)).toBeNull();
+  } finally { Reflect.set(global, '__DEV__', dev); }
+});
 test.each([
   [{ ...unknownImages, unknown: 0, scanned: 2 }, 'Images: no source images'],
   [{ ...unknownImages, unknown: 0, scanned: 2, omitted: 3 }, 'Images: 0 local · 3 omitted · 0 pending'],
