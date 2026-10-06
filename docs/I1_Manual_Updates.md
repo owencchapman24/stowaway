@@ -1,8 +1,8 @@
 # I1 — Manual Updates + Safe Reconciliation
 
-Implementation candidate: **6 October 2026, America/New_York**. Branch: `feat/manual-update-reconciliation`, clean base **181feecd1e4ae4f14f86b862757246d60114956b**, merged main including I0 PR #4. Fetch confirmed `origin/main` at that base. Environment: Node **22.23.3**, npm **10.9.9**, Expo SDK **57**; dependencies/lockfile unchanged. The [October audit](Stowaway_October_2026_Groundwork_Audit.md) controls v0. Owen explicitly selected I1, replacing current I0 instructions against manual updates.
+Implementation date: **6 October 2026, America/New_York**. Implementation commit: **0f3c9e756dd7f2440d3b1da9760ae5b1247922ae**. Branch: `feat/manual-update-reconciliation`, clean base **181feecd1e4ae4f14f86b862757246d60114956b**, merged main including I0 PR #4. Fetch confirmed `origin/main` at that base. Environment: Node **22.23.3**, npm **10.9.9**, Expo SDK **57**; dependencies/lockfile unchanged. The [October audit](Stowaway_October_2026_Groundwork_Audit.md) controls v0. Owen explicitly selected I1, replacing current I0 instructions against manual updates.
 
-**I1 is implemented but NOT physically accepted.** Owen must report [the I1 device checklist](I1_Device_Checklist.md). S0/S1/S2A/I0 remain accepted from his earlier reports, I0 is merged, S2B remains deferred and full v0 is incomplete. Historical evidence documents are unchanged.
+**CORE I1 PHYSICAL ACCEPTANCE PASSED.** Acceptance recorded **6 October 2026, America/New_York**, from Owen's supplied physical-iPhone report for the implementation commit above using the existing library through Expo Go/Metro. **Natural live-source mutation cases were unavailable and remain physically unexercised; deterministic automated tests cover them.** See [physical evidence and conditional limits](I1_Device_Checklist.md). This is user-reported evidence, not an agent-operated phone run or wire inspection. S0/S1/S2A/I0 remain accepted, I0 is merged, S2B remains deferred and full v0 is incomplete. Historical I0/S0/S1/S2A evidence documents are unchanged.
 
 ## Design and affected assumptions
 
@@ -66,6 +66,61 @@ A **separate sequential diff review** followed the first full green check/export
 
 No live SpaceBattles request was made during implementation/review. The native request implementation and policy are unchanged: one shared queue, one request in flight, >=2-second spacing, honest UA, omitted credentials, checked public paths/redirects, bounded retries/Retry-After and stop on access/challenge failure. Source scripts never enter canonical reader HTML; remote loads/images remain blocked; source images are inert placeholders and safe links require deliberate action. No private downloads, raw captures, prose logs, screenshots, credentials or build output is committed.
 
-No old-body edit detection/re-fetch, revision history, source images, read/unread, deletion, extra categories/sites, auth/accounts, backend/sync/search, RSS/notifications or automatic/scheduled/background updates. No S2B, EAS/signing, Apple/App Store, cloud build or paid work. No PR creation or merge. Public/commercial, republication and App Store authorization remain unresolved separately from Owen's personal scope.
+No old-body edit detection/re-fetch, revision history, source images, read/unread, deletion, extra categories/sites, auth/accounts, backend/sync/search, RSS/notifications or automatic/scheduled/background updates. No S2B, EAS/signing, Apple/App Store, cloud build or paid work. The implementation pass created no PR; this acceptance follow-up authorizes PR preparation only, with no merge or next product slice. Public/commercial, republication and App Store authorization remain unresolved separately from Owen's personal scope.
 
-Known deferred technical follow-ups remain **global `PRAGMA foreign_key_check` validation performance** and **S1 diagnostic request-budget accounting under concurrent source traffic**. Their code is unchanged; I1 has not measured or solved either. No timing-based CI assertion was added. Physical iPhone migration/update/cancellation/reader/offline behavior and native wire headers/cookies/cache remain unverified for this candidate.
+Known deferred technical follow-ups remain **global `PRAGMA foreign_key_check` validation performance** and **S1 diagnostic request-budget accounting under concurrent source traffic**. Their code is unchanged; I1 has not measured or solved either. No timing-based CI assertion was added. Natural live additions/removal/reappearance/rename/reorder, saved-unlisted reading and I1 cancellation/resume during a new-body phase remain physically unexercised. Native wire headers/cookies/cache and packet-level missing-only behavior remain unverified; successful visible checks do not establish them. Independent installation, Metro-free launch, first launch in airplane mode and standalone cold-start acceptance remain deferred S2B.
+
+## Physical iPhone acceptance — Owen's reported results
+
+### Existing v2 library → v3 — reported passed
+
+Owen opened the I1 implementation without resetting normal storage. The existing Library retained exactly **Eyes Open (Pokemon Fanfic) 34/34**, **Normal Isn't Ordinary [Pokemon SI] 25/25** and **The Lantern Cartographer 3/3**. Existing real chapters opened normally; saved passage restoration and font/theme preferences remained usable. The synthetic fixture stayed intact, real stories did not gain its harbor asset, and S1/S2A remained development-only diagnostics. Record this as physical v2 → v3 preservation, distinct from host-SQLite migration tests. A fresh harbor-image display check was not separately supplied.
+
+### Deliberate unchanged checks and idempotency — reported passed
+
+Opening Library or a real story started no source check/download. Check for Updates appeared for imported real stories and was absent from the fixture. Before the first deliberate check, no update timestamps were displayed.
+
+On **Normal Isn't Ordinary**, the first deliberate check completed with **Check finished. / Up to date.**, retained **25/25** and a coherent chapter list, recorded separate attempt/complete-check times, and showed no duplicate story/visible entries or pending/Resume state. A second deliberate check again reported Up to date at 25/25, advanced both timestamps and caused no unexpected visible title/order change or duplicate/pending state. This demonstrates idempotency at the UI/persistent-state level; injected-transport tests, not the phone report, establish missing-only body requests.
+
+| Check | Approximate displayed attempt, 6 October 2026 | Approximate displayed successful COMPLETE check |
+| --- | --- | --- |
+| Normal Isn't Ordinary — first | 1:00:59 AM | 1:01:03 AM |
+| Normal Isn't Ordinary — repeat | 1:02:09 AM | 1:02:14 AM |
+| Eyes Open — cancelled manifest check | 1:03:12 AM | None displayed |
+| Eyes Open — deliberate retry after relaunch | 1:06:07 AM | 1:06:13 AM |
+
+These phone-displayed times document the reported sequence, not API/wire timing or an independent clock/timezone audit.
+
+### Cancellation, real force-quit/relaunch and explicit retry — reported passed
+
+Owen started an **Eyes Open** check and cancelled quickly during the manifest-check phase. The story stayed **34/34**, with intact Primary Threadmarks and an attempt timestamp but no successful-complete-check timestamp. UI reported **Cancelled. Committed text is retained. / Prior primary contents retained; no complete update committed.** This is physical evidence of preservation before a successful COMPLETE reconciliation, without claiming the exact native transaction instruction where cancellation arrived.
+
+Owen then force-quit Expo Go through the iOS app switcher and relaunched Stowaway through Metro. Without tapping Check, Eyes Open remained 34/34, its 1:03:12 AM attempt persisted, no complete-check time appeared and no check/download restarted automatically. Existing downloaded text opened/read normally. An explicit **Check for Updates** retry succeeded with Up to date, advanced attempt time, added complete-check time and preserved coherent 34/34 contents without duplicates. This was a manifest-check retry, not a new I1 missing-body Resume Download test.
+
+### Reader and already-running network-disabled text — reported passed
+
+After update checks, Owen confirmed saved passage restoration, typography/theme changes, leave/reopen restoration and Previous/Next staying within the selected story. With the Expo Go project already running, he disabled networking and read/navigated downloaded text successfully. This does **not** prove independent installation, Metro-free launch, first launch in airplane mode or standalone offline cold start.
+
+### Conditional live mutations — explicitly not exercised
+
+**NOT EXERCISED — no natural live source mutation was available:** newly added primary chapter, naturally removed primary entry, later reappearance, or a suitable natural rename/reorder. Consequently, physical **Saved chapters no longer listed** reading remains pending as a conditional live-source observation. No physical pass is fabricated. Deterministic host-SQLite/source/UI tests remain the evidence for append/middle insertion, rename/reorder, removal/reappearance, saved-unlisted behavior, pending removal/reappearance, current navigation and body/locator preservation. I1 new-body cancellation/restart/Resume, background/route ownership controls and direct script/network diagnostics were not separately supplied as physical results.
+
+The physically demonstrated loop is: open an existing imported story → no automatic source work → deliberately Check for Updates → commit a COMPLETE unchanged manifest → Up to date → repeat idempotently → cancel a later check before successful reconciliation → retain prior authoritative contents → survive real force-quit/relaunch → no auto-resume → explicitly retry → complete successfully → retain reader passage/navigation and offline text. Core acceptance is passed with the conditional limits above; the next slice is not authorized.
+
+## Acceptance-bookkeeping validation and PR preparation — 6 October 2026
+
+This follow-up started on clean `feat/manual-update-reconciliation` at **0f3c9e756dd7f2440d3b1da9760ae5b1247922ae** with the expected origin. Fetch confirmed the branch and main base unchanged. Tracked changes are limited to **README.md, AGENTS.md, I1_Manual_Updates.md and I1_Device_Checklist.md**. No application/source/storage/reader code, tests, dependencies, lockfile or historical acceptance record changed. No live SpaceBattles request, prose/raw-page/screenshot capture, new feature or deferred technical fix occurred.
+
+Validation rerun on Node **22.23.3** / npm **10.9.9**:
+
+```text
+npm.cmd run check                    TypeScript + lint + 215 tests / 19 suites passed
+npx.cmd expo install --check          Dependencies are up to date
+npx.cmd expo-doctor@latest            21/21 checks passed
+npx.cmd expo export --platform ios    Local Hermes bundle + harbor.png exported to ignored dist/
+git diff --check                     Passed
+```
+
+Compatibility/Doctor used the metadata/cache access already needed in prior validation. No package/lockfile change or cloud build occurred. Host SQLite and Metro warnings remain informational. A separate sequential documentation review matched each checked item to Owen's report, preserved the approximate timestamp sequence without wire timing claims, kept Check retry distinct from missing-body Resume, and left natural mutations/saved-unlisted behavior and other unreported controls physically unexercised. The export is compilation evidence, not S2B.
+
+GitHub CLI is unavailable on PATH and in its standard installation locations. PR title: **I1: Manual SpaceBattles updates and reconciliation**. The prepared body is outside tracked Git at ignored **.tools/I1_PR_Body.md**. To create manually, open the [main-to-I1 comparison](https://github.com/owencchapman24/stowaway/compare/main...feat/manual-update-reconciliation?expand=1), confirm base **main** / compare **feat/manual-update-reconciliation**, paste that title and the saved body, then click **Create pull request**. No PR was created by this fallback and **no merge is authorized**. Source images/read-state/deletion/S2B and the next milestone remain unstarted.

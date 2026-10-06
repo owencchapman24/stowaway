@@ -1,76 +1,113 @@
-# I1 physical iPhone checklist — pending Owen
+# I1 physical iPhone checklist — core acceptance passed
 
-**NOT physically accepted. All checks below are pending.** Candidate on `feat/manual-update-reconciliation`, based on merged I0 PR #4 at `181feec`. S0/S1/S2A/I0 remain accepted; **S2B deferred, full v0 incomplete**. Use [I1 design/validation](I1_Manual_Updates.md) for transaction/source boundaries. No agent-operated phone run or native wire inspection is claimed.
+**CORE I1 PHYSICAL ACCEPTANCE PASSED.** Acceptance recorded **6 October 2026, America/New_York**, from Owen's supplied physical-iPhone report for implementation **0f3c9e756dd7f2440d3b1da9760ae5b1247922ae** on `feat/manual-update-reconciliation`. Testing used the existing normal library through Expo Go/Metro. This is user-reported evidence, not an agent-operated phone run or independent device/wire inspection. The previously reported device was an iPhone 17 Pro; exact iOS/Expo Go versions were not freshly confirmed.
 
-Run this candidate through SDK 57 Expo Go/Metro on the existing phone library. Do not uninstall Expo Go, clear app data, reset normal storage, re-seed real stories or fabricate source mutations. Confirm the CLI and Expo Go use the same account; keep Metro available for reload/relaunch. On Windows:
+**Natural live-source mutation cases were unavailable and remain physically unexercised; deterministic automated tests cover them.** S0/S1/S2A/I0 remain accepted, I0 is merged in PR #4, **S2B remains deferred and full v0 is incomplete**. See [I1 implementation, validation and acceptance](I1_Manual_Updates.md). Historical I0 evidence is unchanged.
+
+## A. Physical v2 → v3 migration/preservation — reported passed
+
+- [x] Existing Library before I1: Eyes Open (Pokemon Fanfic) **34/34**, Normal Isn't Ordinary [Pokemon SI] **25/25**, The Lantern Cartographer **3/3**.
+- [x] Opening I1 without resetting storage retained all three stories at the same counts.
+- [x] Existing real downloaded chapters opened normally; saved passage restoration and font/theme preferences remained usable.
+- [x] Synthetic fixture remained intact; real stories did not gain its harbor asset.
+- [x] S1/S2A remained development-only diagnostics.
+
+This records physical library preservation, separate from host-SQLite migration tests. A fresh fixture harbor-image display test was not separately supplied.
+
+## B. Deliberate-only updates / fixture exclusion — reported passed
+
+- [x] Opening Library did not start source work; opening a real story did not start Check for Updates.
+- [x] Check for Updates appeared on real imported SpaceBattles stories.
+- [x] The Lantern Cartographer had no Check for Updates action.
+- [x] Before a deliberate check, no update timestamps were present.
+
+## C. First manual COMPLETE unchanged check — reported passed
+
+Story: **Normal Isn't Ordinary [Pokemon SI]**.
+
+- [x] Deliberate Check for Updates completed with **Check finished. / Up to date.**
+- [x] Story remained **25/25**; chapter list stayed coherent, no duplicate story/visible entries appeared and no pending/Resume state appeared.
+- [x] Separate Last update attempt / Last complete check were recorded, approximately **10/6/2026, 1:00:59 AM** / **1:01:03 AM** as displayed on the phone.
+
+## D. Repeated unchanged check / idempotency — reported passed
+
+- [x] Owen deliberately checked the same story again; result remained **Up to date**, **25/25**.
+- [x] Attempt / complete-check times advanced to approximately **10/6/2026, 1:02:09 AM** / **1:02:14 AM**.
+- [x] No duplicate story/entries, pending text/Resume state or unexpected visible title/order change appeared.
+
+This is physical idempotency at the UI/persistent-state level. Displayed timestamps establish sequence, not API/wire timing. No packet-level proof of zero old-body requests is claimed; deterministic injected-transport tests establish missing-only behavior.
+
+## E. Cancellation before successful reconciliation — reported passed
+
+Story: **Eyes Open (Pokemon Fanfic)**.
+
+- [x] Owen deliberately started Check for Updates and cancelled quickly during the manifest-check phase.
+- [x] Story remained **34/34** with intact Primary Threadmarks.
+- [x] Last update attempt showed approximately **10/6/2026, 1:03:12 AM**; no Last complete check appeared.
+- [x] UI reported **Cancelled. Committed text is retained. / Prior primary contents retained; no complete update committed.**
+
+This demonstrates prior authoritative contents retained with no false successful-check state. The exact native transaction instruction where cancellation arrived is not inferred.
+
+## F. Real force-quit / Metro relaunch after cancellation — reported passed
+
+- [x] Owen force-quit Expo Go through the iOS app switcher and relaunched Stowaway through Metro.
+- [x] Opening Eyes Open without tapping Check retained **34/34**, its **1:03:12 AM** attempt timestamp and no complete-check timestamp.
+- [x] No source check/download restarted automatically; existing downloaded chapter text opened/read normally.
+
+## G. Explicit retry after cancellation — reported passed
+
+- [x] Owen deliberately tapped Check for Updates again and allowed it to complete.
+- [x] Eyes Open reported **Up to date**, retained **34/34**, and showed coherent contents without duplicate entries.
+- [x] Last attempt advanced to approximately **10/6/2026, 1:06:07 AM**; Last complete check appeared at approximately **1:06:13 AM**.
+
+The physically passed sequence is cancel → real force-quit/relaunch → no automatic retry → deliberate retry → successful COMPLETE check. This was **Check for Updates retry**, not Resume Download of missing/new bodies.
+
+## H. Reader regression after checks — reported passed
+
+- [x] Saved passage restoration still worked.
+- [x] Previous/Next stayed within the selected story.
+- [x] Typography/theme changes and leave/reopen restoration still worked.
+
+No natural rename/reorder occurred; current-source order after a mutation remains automated evidence rather than a new physical mutation pass.
+
+## I. Already-running network-disabled text reading — reported passed
+
+- [x] With the Expo Go project already running, Owen disabled networking and read/navigated downloaded text successfully.
+
+This is **NOT S2B**: no independent installation, Metro-free launch, first launch in airplane mode or standalone cold-start acceptance is claimed.
+
+## Conditional natural-source cases — NOT EXERCISED
+
+Each case below is **NOT EXERCISED — no natural live source mutation was available**:
+
+- [ ] Newly added primary chapter / append or mid-list insertion.
+- [ ] Naturally removed primary entry and the physical **Saved chapters no longer listed** section/read/navigation path.
+- [ ] Natural later reappearance, including body/locator reuse and restored current membership.
+- [ ] Suitable natural rename/reorder and corresponding reader title/order change.
+
+Saved-unlisted physical reading remains pending as a conditional live-source observation. No source mutation was fabricated. Host-SQLite/source/UI tests separately cover append, mid-list insertion, rename/reorder, removal, saved-unlisted behavior, reappearance, pending removal/reappearance, current navigation/order and body/locator preservation; automated results are not translated into physical live-source passes.
+
+## Not separately supplied / deferred
+
+- [ ] I1 new-body download cancellation/restart and explicit Resume Download: no new/pending text phase occurred in the supplied unchanged checks. I0's historical missing-body resume pass remains separate.
+- [ ] Background/leave cancellation, route/focus late-result controls and ordinary duplicate Add Story regression were not separately reported in this I1 physical run.
+- [ ] Fresh harbor-image display, source-image placeholder/safe-link smoke, VoiceOver/direct WebView script/network diagnostics and actual iOS/Expo Go versions were not newly supplied.
+- [ ] Native request headers/cookies/cache, packet-level missing-only requests and exact SQL cancellation instruction remain unverified.
+- [ ] **S2B deferred:** independently installed app, bundled JS/assets, no Expo Go/Metro, offline cold launch and offline force-quit/relaunch.
+
+These qualifications do not revoke core I1 acceptance. Global FK-validation performance and S1 concurrent diagnostic-budget accounting remain deferred technical follow-ups, unchanged by this acceptance pass.
+
+The demonstrated user loop is: open existing imported story → no automatic source work → deliberately Check for Updates → COMPLETE unchanged manifest committed → Up to date → repeat idempotently → cancel before successful reconciliation → preserve prior contents → survive force-quit/relaunch → no auto-resume → explicitly retry → complete successfully → preserve reader position/navigation/offline text.
+
+## Reproducing the accepted loop
+
+Future reproduction is regression work, not unfinished core acceptance. Stay on the accepted I1 branch, use SDK 57 Expo Go/Metro with the same CLI/Expo account and the existing phone library:
 
 ```powershell
 git switch feat/manual-update-reconciliation
 npm.cmd start
 ```
 
-Record candidate commit, date, device, actual iOS and Expo Go versions, current counts and any typed failure. Use only already selected public stories, ordinary unauthenticated access and deliberate taps. Stop on blocked/login/challenge; no repeated probes, session copying, proxy or bypass. Do not send prose, raw pages or screenshots into Git.
+Use only the already selected public stories, deliberate actions and ordinary unauthenticated access. Preserve normal storage; do not uninstall/clear app data, reset/reseed real stories or fabricate source changes. Stop on blocked/login/challenge; no copied sessions, proxies or bypasses. Record actual observed results and unexercised conditional cases without committing prose/raw pages/screenshots.
 
-## A. Existing v2 library → v3 preservation
-
-- [ ] Before running the candidate, record existing passage/preferences and counts for Eyes Open, Normal Isn't Ordinary and The Lantern Cartographer. Historically accepted counts were 34/34, 25/25 and 3/3; source counts may naturally change later.
-- [ ] Open the candidate without resetting storage. All three stories remain, with their existing downloaded text and current counts; no duplicate rows/story appear.
-- [ ] Open previously downloaded real chapters; existing passages and font/theme preferences still work.
-- [ ] The Lantern Cartographer remains 3/3, with saved passage/preferences and the bundled harbor image; real stories do not gain that image.
-- [ ] S1/S2A remain Development diagnostics. Do not initialize/reset/migrate S2A merely to test I1; its dedicated v1 inspection rules still apply.
-
-## B. Opening has no automatic source work
-
-- [ ] Open Library and a real Story. No update/download starts from opening or returning; Check for Updates is deliberate.
-- [ ] The synthetic fixture has no Check for Updates action.
-
-## C. Deliberate complete check and repetition
-
-- [ ] Open [Normal Isn't Ordinary](https://forums.spacebattles.com/threads/normal-isnt-ordinary-pokemon-si.1234421/) or [Eyes Open](https://forums.spacebattles.com/threads/eyes-open-pokemon-fanfic.1129205/), then tap Check for Updates once with networking enabled.
-- [ ] Observe checking/reconciling status and a successful COMPLETE check. Compare current primary count/order/titles against the ordinary site primary Threadmarks, without changing site content.
-- [ ] If source is unchanged and all current text exists, result is Up to date; counts remain coherent, no duplicate story/entry appears and saved passage is preserved.
-- [ ] Last attempt and last complete check display; a second deliberate unchanged check remains idempotent.
-- [ ] Reopening by itself starts no further check. Ordinary repeat Add Story/import remains complete/missing-only resume, with no implicit update.
-
-UI observations do not independently prove request headers/cookies/spacing or that an old body was never requested. Missing-only logic has deterministic injected-transport evidence; native wire-level inspection remains separate.
-
-## D. Naturally new primary chapter — conditional
-
-- [ ] If a selected real story has naturally gained a primary chapter, record that fact/count/post ID, tap Check for Updates and observe only current missing/new text completing; count/order update coherently.
-- [ ] Open the new downloaded chapter and an old saved passage. Existing reading position/preferences survive.
-- [ ] Repeat the complete check: no duplicate entries or unnecessary text download is visible.
-
-If no new chapter exists, report **not exercised — no natural source change**. Do not fabricate a live mutation. Host fixtures cover deterministic append/middle insertion/rename/reorder/removal/reappearance.
-
-## E. Cancel, force-quit/relaunch and explicit Resume — where practical
-
-- [ ] During a practical manifest check, tap Cancel or background/leave. The previous authoritative manifest remains if reconciliation did not commit; successful-check time does not advance for an incomplete check. Cancellation after unavoidable COMMIT may retain it.
-- [ ] If naturally missing/new text exists, cancel during body download. New current manifest/success time remain; completed text is retained; missing current entries say Not downloaded and Resume is available.
-- [ ] Force-quit Expo Go via the app switcher, relaunch through Metro, inspect Library/Contents. Persisted current/saved/pending state is coherent; no automatic request/resume starts.
-- [ ] Tap Resume Download explicitly where pending bodies exist. It completes current missing work; removed entries are not queued and existing passage remains.
-- [ ] Open Resume, then navigate away/change the selected story. Late progress/results/actions stay with the original story and do not appear on another story.
-
-Record which boundary was actually reached. An unchanged complete library may have no body phase to cancel; report it unexercised instead of deleting downloads or resetting data. Background/reload, injected rollback and real force-quit are different evidence.
-
-## F. Saved chapters no longer listed — conditional
-
-- [ ] Only if a **natural complete source removal** exists, confirm current total/downloaded excludes it and downloaded removed text appears separately under Saved chapters no longer listed.
-- [ ] Open that saved chapter; text/position remain usable, Contents returns to the same story and Previous/Next are disabled.
-- [ ] If it naturally reappears later, check again: same identity/body/locator is reused, with current title/order/count restored.
-
-If no natural removal/reappearance exists, report **not exercised**. No local mutation UI or fabricated live source case is supplied. Host SQLite and screen/reader fixtures provide deterministic coverage; they are not physical live-removal evidence.
-
-## G. Reader regression after a check
-
-- [ ] Current primary titles and Previous/Next follow current source order and remain within the selected story.
-- [ ] An old passage restores after typography/theme changes, leave/reopen and force-quit/relaunch through Metro.
-- [ ] Source images remain omission placeholders; fixture harbor remains local and isolated. Safe source links open only on deliberate action.
-
-## H. Already-running network-disabled text reading
-
-- [ ] With the Expo Go project already running, disable Wi-Fi/cellular and read downloaded real text, navigate between downloaded chapters and return to Contents. Saved passages/preferences remain usable.
-- [ ] Report any deliberately attempted offline update failure as a typed failure retaining prior manifest/text; success time must not falsely advance.
-
-This is **not S2B**. Independent installation, no-Metro cold start and first launch in airplane mode remain deferred. VoiceOver/direct WebView script/network diagnostics and native wire inspection retain their previous unverified status unless separately observed and reported.
-
-After testing, Owen reports actual passes, failures and unexercised conditional cases. Physical acceptance, PR creation/merge and the next milestone require a subsequent instruction; this candidate does not authorize them automatically.
+**CORE I1 PHYSICAL ACCEPTANCE PASSED. Natural live-source mutation cases remain physically unexercised. S2B deferred; full v0 incomplete.** Acceptance follow-up authorizes documentation/status cleanup, validation, a separate commit/push and PR preparation against main. No PR merge or next product slice is authorized.
