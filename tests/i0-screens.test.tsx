@@ -14,22 +14,23 @@ import { threadUrl } from './fixtures/spacebattles';
 
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
-  return { router: { push: jest.fn(), replace: jest.fn() },
+  return { router: { push: jest.fn(), replace: jest.fn() }, Stack: { Screen: () => null },
     useLocalSearchParams: jest.fn(), useFocusEffect: (callback: () => void) => useEffect(callback, [callback]) };
 });
+jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('../src/storage/context', () => ({ useStorage: jest.fn() }));
 jest.mock('../src/importing/native', () => ({ importNativeStory: jest.fn() }));
 let mockReaderProps: ChapterReaderProps;
 jest.mock('../src/reader/ChapterReader', () => ({ ChapterReader: (props: ChapterReaderProps) => { mockReaderProps = props; return null; } }));
 const fixture: StorySummary = { id: 'fixture:thread:1001', source: 'fixture', threadId: '1001', title: 'The Lantern Cartographer',
-  author: 'Synthetic author', sourceUrl: '', categoryId: null, total: 3, downloaded: 3 };
+  author: 'Synthetic author', sourceUrl: '', categoryId: null, total: 3, downloaded: 3, lastUpdateAttemptAt: null, lastUpdateSuccessAt: null };
 const story: StorySummary = { id: 'spacebattles:thread:9001', source: 'spacebattles', threadId: '9001', title: 'Synthetic import',
-  author: null, sourceUrl: threadUrl, categoryId: '9', total: 3, downloaded: 1 };
+  author: null, sourceUrl: threadUrl, categoryId: '9', total: 3, downloaded: 1, lastUpdateAttemptAt: null, lastUpdateSuccessAt: null };
 const entries = [
   { id: story.id + ':post:101', postId: '101', title: 'First', position: 0, downloaded: true, sourceUrl: threadUrl + '#post-101' },
   { id: story.id + ':post:102', postId: '102', title: 'Second', position: 1, downloaded: false, sourceUrl: threadUrl + '#post-102' },
 ];
-const repository = { listStories: jest.fn(), getStory: jest.fn(), listContents: jest.fn() };
+const repository = { listStories: jest.fn(), getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn() };
 const run = jest.mocked(importNativeStory);
 beforeAll(() => {
   jest.mocked(useStorage).mockReturnValue({ repository, preferences: { theme: 'light', fontSize: 20 }, changePreferences: jest.fn(), imageWarning: null } as unknown as ReturnType<typeof useStorage>);
@@ -42,10 +43,13 @@ beforeEach(() => {
   jest.clearAllMocks(); run.mockReset();
   jest.mocked(useLocalSearchParams).mockReturnValue({});
   repository.listStories.mockResolvedValue([fixture, story]); repository.getStory.mockResolvedValue(story); repository.listContents.mockResolvedValue(entries);
+  repository.listSavedUnlisted.mockResolvedValue([]);
+  jest.spyOn(AppState, 'addEventListener').mockReturnValue({ remove: jest.fn() });
 });
 afterEach(async () => {
   await act(async () => { jest.runOnlyPendingTimers(); });
   jest.useRealTimers();
+  jest.restoreAllMocks();
 });
 
 test('Library lists stories/counts and routes Add Story and selected contents', async () => {
@@ -163,6 +167,26 @@ test('contents preserves order, gates missing bodies, offers resume and opens so
   fireEvent.press(screen.getByLabelText('Resume Download'));
   expect(router.push).toHaveBeenCalledWith({ pathname: '/add-story', params: { story: story.id } });
   open.mockRestore();
+});
+
+test('changing Resume route aborts old download and late results/progress cannot attach to the next story', async () => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });
+  let signal: AbortSignal | undefined; let finish!: (value: Awaited<ReturnType<typeof importNativeStory>>) => void;
+  let nextProgress: NonNullable<Parameters<typeof importNativeStory>[2]>['onProgress'];
+  run.mockImplementation((_url, _repo, options) => {
+    signal = options?.signal; nextProgress = options?.onProgress;
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  const view = render(<AddStory />); await waitFor(() => expect(screen.getByLabelText('Resume Download')).toBeTruthy());
+  fireEvent.press(screen.getByLabelText('Resume Download'));
+  const other = { ...story, id: 'spacebattles:thread:9002', threadId: '9002', title: 'Other resumed story', sourceUrl: 'https://forums.spacebattles.com/threads/9002/' };
+  repository.getStory.mockResolvedValue(other); jest.mocked(useLocalSearchParams).mockReturnValue({ story: other.id });
+  view.rerender(<AddStory />); await waitFor(() => expect(screen.getByText('Other resumed story: 1 / 3 text chapters downloaded')).toBeTruthy());
+  expect(signal?.aborted).toBe(true);
+  await act(async () => { nextProgress?.({ phase: 'downloading', storyId: story.id, downloaded: 2, total: 3, title: 'Old body' }); finish({ story, failure: null }); });
+  expect(screen.queryByText(/Old body/)).toBeNull(); expect(screen.queryByText('Synthetic import: 1 / 3 text chapters downloaded')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Open story contents'));
+  expect(router.replace).toHaveBeenCalledWith({ pathname: '/story', params: { story: other.id } });
 });
 
 test('normal reader Contents routes to its current story', () => {

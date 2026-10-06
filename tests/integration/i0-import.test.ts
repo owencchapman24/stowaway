@@ -59,7 +59,7 @@ test('actual v1 migration preserves fixture bodies/IDs, locator, settings and as
   await host.db.runAsync('UPDATE chapters SET title = ?, position = ? WHERE id = ?', 'Renamed old chapter', 8, chapter.id);
   const bodies = await host.db.getAllAsync('SELECT * FROM chapters ORDER BY id');
   await migrate(host.db); await migrate(host.db);
-  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 2 });
+  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 });
   expect(await host.db.getAllAsync('SELECT * FROM chapters ORDER BY id')).toEqual(bodies);
   expect(await repo.getLocator(chapter.id)).toEqual(locator);
   expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 26 });
@@ -67,7 +67,7 @@ test('actual v1 migration preserves fixture bodies/IDs, locator, settings and as
   expect(await repo.listStories()).toMatchObject([{ id: fixture.id, total: 3, downloaded: 3 }]);
   expect((await repo.listContents(fixture.id)).map((e) => e.title)).toContain('Renamed old chapter');
   expect(await host.db.getAllAsync('PRAGMA foreign_key_check')).toEqual([]);
-  await host.db.execAsync('PRAGMA user_version = 3');
+  await host.db.execAsync('PRAGMA user_version = 4');
   await expect(migrate(host.db)).rejects.toThrow('newer');
   expect(await host.db.getAllAsync('SELECT * FROM chapters ORDER BY id')).toEqual(bodies);
 });

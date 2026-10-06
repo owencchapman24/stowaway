@@ -1,7 +1,7 @@
 import { exclusiveTransaction, type SqlDatabase } from './database';
 
-// S2A deliberately keeps its existing diagnostic schema; normal storage uses v2.
-export async function migrate(db: SqlDatabase, supportedVersion = 2): Promise<void> {
+// S2A deliberately keeps its existing diagnostic schema; normal storage uses v3.
+export async function migrate(db: SqlDatabase, supportedVersion = 3): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   await exclusiveTransaction(db, async (tx) => {
     const version = await tx.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -43,6 +43,23 @@ export async function migrate(db: SqlDatabase, supportedVersion = 2): Promise<vo
           ROW_NUMBER() OVER (PARTITION BY story_id ORDER BY position, id) - 1, ''
         FROM chapters;
       PRAGMA user_version = 2;
+    `);
+    if (supportedVersion >= 3 && (version?.user_version ?? 0) < 3) await tx.execAsync(`
+      ALTER TABLE stories ADD COLUMN last_update_attempt_at INTEGER;
+      ALTER TABLE stories ADD COLUMN last_update_success_at INTEGER;
+      CREATE TABLE threadmark_entries_v3 (
+        story_id TEXT NOT NULL REFERENCES stories(id), post_id TEXT NOT NULL,
+        title TEXT NOT NULL, position INTEGER NOT NULL CHECK(position >= 0),
+        source_url TEXT NOT NULL, currently_listed INTEGER NOT NULL DEFAULT 1
+          CHECK(currently_listed IN (0, 1)), PRIMARY KEY(story_id, post_id)
+      );
+      INSERT INTO threadmark_entries_v3(story_id, post_id, title, position, source_url)
+        SELECT story_id, post_id, title, position, source_url FROM threadmark_entries;
+      DROP TABLE threadmark_entries;
+      ALTER TABLE threadmark_entries_v3 RENAME TO threadmark_entries;
+      CREATE UNIQUE INDEX current_threadmark_positions ON threadmark_entries(story_id, position)
+        WHERE currently_listed = 1;
+      PRAGMA user_version = 3;
     `);
   });
 }
