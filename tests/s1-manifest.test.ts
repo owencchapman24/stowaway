@@ -38,6 +38,30 @@ test('expands ranges in place, handles JSON HTML envelopes and deduplicates stab
   expect(result.state).toBe('COMPLETE'); expect(result.entries.map((e) => e.postId)).toEqual(['94', '91', '93', '92']);
   expect(result.duplicates).toEqual(['94']); expect(result.pages).toBe(2);
 });
+
+test.each([
+  ['no explicit identity', row('92')],
+  ['selected thread identity', page(row('92'))],
+])('range fragments accept %s with valid primary rows', async (_name, html) => {
+  const result = await discoverManifest(thread, source({
+    [indexUrl]: index(row('91') + range(), { expected: 2 }),
+    [rangeUrl]: JSON.stringify({ html: { content: html } }),
+  }), root);
+  expect(result.state).toBe('COMPLETE');
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91', '92']);
+});
+
+test.each([
+  page(row('92')).replace('thread-9001', 'thread-9999'),
+  page('<div data-content-key="thread-9999">' + row('92') + '</div>'),
+])('an explicit conflicting thread in a range cannot contribute complete entries', async (html) => {
+  const result = await discoverManifest(thread, source({
+    [indexUrl]: index(row('91') + range(), { expected: 2 }), [rangeUrl]: html,
+  }), root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.code).toBe('incomplete');
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91']);
+});
 test('supports nested observed range URLs and rejects cycles/missing continuations', async () => {
   const nested = rangeUrl.replace('min=1', 'min=2');
   const complete = await discoverManifest(thread, source({ [indexUrl]: index(range(), { expected: 2 }),

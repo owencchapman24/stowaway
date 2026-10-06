@@ -116,7 +116,7 @@ export function createS2ADiagnostic(deps: S2ADependencies) {
         if (deps.databaseExists()) throw new Error('S2A DB already exists. Inspect it first; explicit reset is required to restart.');
         files.mkdir('database');
         const { handle, repository } = await open();
-        await migrate(handle.db);
+        await migrate(handle.db, 1);
         const compiled = await fixture();
         const asset = await contentFiles.stage(null);
         await repository.seed(compiled, asset);

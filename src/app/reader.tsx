@@ -9,8 +9,9 @@ export default function Reader() {
   const [attempt, setAttempt] = useState(0);
   const storage = useStorage();
   return <ChapterReader key={`${chapterId}:${attempt}`} {...storage} chapterId={chapterId}
-    onRetry={() => setAttempt((value) => value + 1)} onNavigate={(destination) => {
+    onRetry={() => setAttempt((value) => value + 1)} onNavigate={(destination, story) => {
       if (destination) router.replace({ pathname: '/reader', params: { chapter: destination } });
+      else if (story) router.replace({ pathname: '/story', params: { story } });
       else router.replace('/');
     }} />;
 }

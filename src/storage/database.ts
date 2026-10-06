@@ -12,21 +12,26 @@ export interface SqlDatabase extends SqlConnection {
   withExclusiveTransactionAsync(work: (transaction: SqlConnection) => Promise<void>): Promise<void>;
 }
 
-export async function exclusiveTransaction(db: SqlDatabase, work: (transaction: SqlConnection) => Promise<void>) {
+/** Synchronous final guard; throwing rolls back before control returns for COMMIT. */
+export type BeforeCommitGuard = () => void;
+
+export async function exclusiveTransaction(db: SqlDatabase, work: (transaction: SqlConnection) => Promise<void>,
+  beforeCommit?: BeforeCommitGuard) {
   await db.withExclusiveTransactionAsync(async (tx) => {
     await work(tx);
     // Expo opens a fresh connection and starts BEGIN before our callback. Setting
     // foreign_keys inside BEGIN is a no-op; validate references before COMMIT.
     const violation = await tx.getFirstAsync('PRAGMA foreign_key_check');
     if (violation) throw new Error('Foreign key violation; transaction rolled back.');
+    beforeCommit?.();
   });
 }
 
 // No async transaction may capture work issued outside its callback.
 export function serializeWrites(db: SqlDatabase) {
   let tail: Promise<void> = Promise.resolve();
-  return function write(work: (transaction: SqlConnection) => Promise<void>): Promise<void> {
-    const result = tail.then(() => exclusiveTransaction(db, work));
+  return function write(work: (transaction: SqlConnection) => Promise<void>, beforeCommit?: BeforeCommitGuard): Promise<void> {
+    const result = tail.then(() => exclusiveTransaction(db, work, beforeCommit));
     tail = result.catch(() => undefined);
     return result;
   };

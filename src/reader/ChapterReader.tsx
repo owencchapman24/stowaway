@@ -24,7 +24,7 @@ export interface ChapterReaderProps {
   preferences: Preferences;
   changePreferences(value: Preferences): Promise<void>;
   onRetry(): void;
-  onNavigate(destination: string | null): void;
+  onNavigate(destination: string | null, storyId?: string): void;
   renderFile?: typeof createRenderFile;
   retainRenderFiles?: boolean;
 }
@@ -44,9 +44,10 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   useEffect(() => {
     let active = true;
     let loaded: ReaderModel | null = null;
-    Promise.all([repository.getChapter(chapterId), repository.getLocator(chapterId),
-      repository.listChapters(), repository.getAssetPath()]).then(async ([chapter, locator, list, assetPath]) => {
+    repository.getChapter(chapterId).then(async (chapter) => {
       if (!chapter) throw new Error('Chapter is not downloaded.');
+      const [locator, list, assetPath] = await Promise.all([repository.getLocator(chapterId),
+        repository.listChapters(chapter.storyId), repository.getChapterAssetPath(chapterId)]);
       if (!active) return;
       const session = Crypto.randomUUID();
       const file = await renderFile(chapter, locator, preferencesRef.current, session, assetPath);
@@ -101,7 +102,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     exiting.current = true;
     try {
       await flushForExit();
-      onNavigate(destination);
+      onNavigate(destination, modelRef.current?.chapter.storyId);
     } catch {
       exiting.current = false;
       setError('Could not save before leaving. Please retry.');

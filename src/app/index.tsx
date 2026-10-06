@@ -1,47 +1,39 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect, router } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { fixtureStory } from '../fixtures/story';
-import type { ChapterSummary } from '../domain/types';
+import type { StorySummary } from '../domain/types';
 import { useStorage } from '../storage/context';
 import { Control } from '../reader/controls';
+import { screenStyles as styles } from '../reader/screen-styles';
 
-export default function Contents() {
+export default function Library() {
   const { repository, imageWarning } = useStorage();
-  const [chapters, setChapters] = useState<ChapterSummary[]>([]);
-  const [lastChapter, setLastChapter] = useState<string | null>(null);
+  const [stories, setStories] = useState<StorySummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   useFocusEffect(useCallback(() => {
     let active = true;
-    Promise.all([repository.listChapters(), repository.getLastChapter()]).then(([list, last]) => {
-      if (active) { setChapters(list); setLastChapter(last); setError(null); }
-    }).catch(() => { if (active) setError('Could not read the local chapter list.'); });
+    repository.listStories().then((list) => {
+      if (active) { setStories(list); setError(null); }
+    }).catch(() => { if (active) setError('Could not read the local library.'); });
     return () => { active = false; };
   }, [repository]));
-  function open(chapter: string) { router.push({ pathname: '/reader', params: { chapter } }); }
-  return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.content}>
-    <Text accessibilityRole="header" style={styles.heading}>Stowaway</Text>
-    <Text style={styles.title}>{fixtureStory.title}</Text>
-    <Text style={styles.note}>Original synthetic story · 3 offline chapters</Text>
-    <Text style={styles.note}>S0 fixture reader. No live imports.</Text>
-    {__DEV__ && <Control label="Open S1 development diagnostic" text="S1 diagnostic (dev only)" onPress={() => router.push('/s1')} />}
-    {__DEV__ && <Control label="Open S2A recovery diagnostic" text="S2A recovery diagnostic (dev only)" onPress={() => router.push('/s2a')} />}
-    {imageWarning && <Text accessibilityRole="alert">{imageWarning}</Text>}
-    {error && <Text accessibilityRole="alert">{error}</Text>}
-    {lastChapter && <Control label="Resume last saved chapter" text="Resume reading" onPress={() => open(lastChapter)} />}
-    {chapters.map((chapter) => <View key={chapter.id} style={styles.chapter}>
-      <Control label={`Read ${chapter.title}`} text={chapter.title} onPress={() => open(chapter.id)} />
-    </View>)}
-    <Text style={styles.note}>Positions and reading settings stay on this device.</Text>
-  </ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.page}><FlatList data={stories} keyExtractor={(story) => story.id}
+    contentContainerStyle={styles.content} ListHeaderComponent={<View style={styles.section}>
+      <Text accessibilityRole="header" style={styles.heading}>Stowaway</Text>
+      <Control label="Add Story" text="Add Story" onPress={() => router.push('/add-story')} />
+      {imageWarning && <Text accessibilityRole="alert">{imageWarning}</Text>}
+      {error && <Text accessibilityRole="alert">{error}</Text>}
+    </View>} renderItem={({ item }) => <View style={styles.section}>
+      <Control label={`Open ${item.title}`} text={item.title}
+        onPress={() => router.push({ pathname: '/story', params: { story: item.id } })} />
+      <Text>{item.author ?? 'Author unavailable'}</Text>
+      <Text>{item.downloaded} / {item.total} text chapters downloaded</Text>
+      {item.downloaded < item.total && <Text>Pending chapters — open contents to resume download.</Text>}
+    </View>} ListFooterComponent={<View style={styles.section}>
+      <Text>Downloaded text and reading positions stay on this device.</Text>
+      {__DEV__ && <><Text accessibilityRole="header">Development diagnostics</Text>
+        <Control label="Open S1 development diagnostic" text="S1 diagnostic (dev only)" onPress={() => router.push('/s1')} />
+        <Control label="Open S2A recovery diagnostic" text="S2A recovery diagnostic (dev only)" onPress={() => router.push('/s2a')} /></>}
+    </View>} /></SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#faf7f0' },
-  content: { padding: 24, gap: 16 },
-  heading: { fontSize: 30, fontWeight: '700', color: '#22252a' },
-  title: { fontSize: 24, color: '#22252a' },
-  note: { fontSize: 16, lineHeight: 24, color: '#44484d' },
-  chapter: { marginVertical: 4 },
-});

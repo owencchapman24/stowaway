@@ -1,4 +1,4 @@
-name: Offline S0 checks
+name: Stowaway checks
 on: [push, pull_request]
 jobs:
   check:

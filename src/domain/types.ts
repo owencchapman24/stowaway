@@ -29,3 +29,22 @@ export interface Preferences {
 }
 
 export const DEFAULT_PREFERENCES: Preferences = { theme: 'light', fontSize: 20 };
+
+export interface StoryMetadata {
+  id: string;
+  source: 'fixture' | 'spacebattles';
+  threadId: string;
+  title: string;
+  author: string | null;
+  sourceUrl: string;
+  categoryId: string | null;
+}
+export interface StorySummary extends StoryMetadata {
+  total: number;
+  downloaded: number;
+}
+export interface StoryContentsEntry extends ChapterSummary {
+  postId: string;
+  sourceUrl: string;
+  downloaded: boolean;
+}
