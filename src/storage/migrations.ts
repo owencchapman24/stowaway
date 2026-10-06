@@ -1,7 +1,7 @@
 import { exclusiveTransaction, type SqlDatabase } from './database';
 
-// S2A deliberately keeps its existing diagnostic schema; normal storage uses v3.
-export async function migrate(db: SqlDatabase, supportedVersion = 3): Promise<void> {
+// S2A deliberately keeps its existing diagnostic schema; normal storage uses v4.
+export async function migrate(db: SqlDatabase, supportedVersion = 4): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   await exclusiveTransaction(db, async (tx) => {
     const version = await tx.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -60,6 +60,26 @@ export async function migrate(db: SqlDatabase, supportedVersion = 3): Promise<vo
       CREATE UNIQUE INDEX current_threadmark_positions ON threadmark_entries(story_id, position)
         WHERE currently_listed = 1;
       PRAGMA user_version = 3;
+    `);
+    if (supportedVersion >= 4 && (version?.user_version ?? 0) < 4) await tx.execAsync(`
+      ALTER TABLE chapters ADD COLUMN image_discovery TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(image_discovery IN ('unknown', 'scanned', 'saved-text-mismatch', 'fixture'));
+      UPDATE chapters SET image_discovery = 'fixture'
+        WHERE story_id IN (SELECT id FROM stories WHERE source = 'fixture');
+      CREATE TABLE chapter_images (
+        chapter_id TEXT NOT NULL REFERENCES chapters(id), slot INTEGER NOT NULL CHECK(slot >= 0),
+        block_id TEXT NOT NULL, source_url TEXT, alt TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending', 'downloaded', 'omitted')), reason TEXT,
+        relative_path TEXT, format TEXT CHECK(format IN ('png', 'jpeg', 'webp')),
+        byte_length INTEGER, width INTEGER, height INTEGER, digest TEXT,
+        PRIMARY KEY(chapter_id, slot), UNIQUE(chapter_id, block_id),
+        CHECK((state = 'downloaded' AND relative_path IS NOT NULL AND format IS NOT NULL
+          AND byte_length IS NOT NULL AND width IS NOT NULL AND height IS NOT NULL
+          AND byte_length > 0 AND width > 0 AND height > 0 AND digest IS NOT NULL AND reason IS NULL)
+          OR (state != 'downloaded' AND relative_path IS NULL AND format IS NULL
+          AND byte_length IS NULL AND width IS NULL AND height IS NULL AND digest IS NULL))
+      );
+      PRAGMA user_version = 4;
     `);
   });
 }

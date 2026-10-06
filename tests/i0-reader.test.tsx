@@ -13,12 +13,13 @@ jest.mock('react-native-webview', () => {
 const chapter: Chapter = { id: 'spacebattles:thread:9001:post:101', storyId: 'spacebattles:thread:9001',
   title: 'Generated first', position: 0, html: '<p>Generated</p>', contentHash: 'generated-hash',
   sanitizerVersion: '1', blockIds: ['block-0001'], links: {} };
-const repo = { getChapter: jest.fn(), getLocator: jest.fn(), listChapters: jest.fn(), getChapterAssetPath: jest.fn(), saveLocator: jest.fn() };
+const repo = { getChapter: jest.fn(), getLocator: jest.fn(), listChapters: jest.fn(), getChapterAssetPath: jest.fn(), listChapterImages: jest.fn(), saveLocator: jest.fn() };
 beforeEach(() => {
   jest.clearAllMocks();
   repo.getChapter.mockResolvedValue(chapter); repo.getLocator.mockResolvedValue(null);
   repo.listChapters.mockImplementation(async (story) => story === chapter.storyId ? [chapter] : [chapter, { id: 'fixture:thread:1001:post:2001' }]);
   repo.getChapterAssetPath.mockResolvedValue(null);
+  repo.listChapterImages.mockResolvedValue([]);
   jest.mocked(createRenderFile).mockResolvedValue({ uri: 'file:///generated/index.html', readAccess: 'file:///generated/',
     directory: { exists: false, delete: jest.fn() } } as unknown as Awaited<ReturnType<typeof createRenderFile>>);
 });

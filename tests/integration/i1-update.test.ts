@@ -93,10 +93,10 @@ test('v2 -> v3 preserves stories, manifests, bodies, locators, preferences and b
     entries: await host.db.getAllAsync('SELECT * FROM threadmark_entries ORDER BY story_id, post_id'),
     chapters: await host.db.getAllAsync('SELECT * FROM chapters ORDER BY id'),
     retained: await retained(), settings: await host.db.getAllAsync('SELECT * FROM settings'), assets: await host.db.getAllAsync('SELECT * FROM assets') };
-  host.failNextCommit(); await expect(migrate(host.db)).rejects.toThrow('Injected commit failure');
+  host.failNextCommit(); await expect(migrate(host.db, 3)).rejects.toThrow('Injected commit failure');
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 2 });
   expect(await host.db.getAllAsync('SELECT * FROM threadmark_entries ORDER BY story_id, post_id')).toEqual(old.entries);
-  await migrate(host.db); await migrate(host.db);
+  await migrate(host.db, 3); await migrate(host.db, 3);
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 });
   // Explicit columns refresh the host connection's schema after external DDL;
   // Node SQLite captures SELECT * column names before SQLite's step/reprepare.
@@ -117,7 +117,7 @@ test('v2 -> v3 preserves stories, manifests, bodies, locators, preferences and b
 test.each([0, 1, 2])('fresh / v%s path reaches v3 without resetting data', async (version) => {
   host.close(); host = hostSqlite(join(folder, 'path.db'));
   if (version) await migrate(host.db, version);
-  await migrate(host.db);
+  await migrate(host.db, 3);
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 });
   expect(await host.db.getAllAsync('PRAGMA foreign_key_check')).toEqual([]);
 });

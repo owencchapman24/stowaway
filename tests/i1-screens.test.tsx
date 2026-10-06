@@ -9,6 +9,9 @@ import { S1Failure } from '../src/sources/spacebattles/types';
 import { Control } from '../src/reader/controls';
 import type { ImportProgress, UpdateResult } from '../src/importing/import-story';
 import type { StoryContentsEntry, StorySummary } from '../src/domain/types';
+import { downloadNativeImages } from '../src/images/native';
+import type { ImageResult } from '../src/images/download';
+import type { ImageSummary } from '../src/images/types';
 
 let mockBlur: () => void;
 let mockRefocus: () => void;
@@ -26,14 +29,16 @@ jest.mock('expo-router', () => {
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('../src/storage/context', () => ({ useStorage: jest.fn() }));
 jest.mock('../src/importing/native', () => ({ updateNativeStory: jest.fn() }));
+jest.mock('../src/images/native', () => ({ downloadNativeImages: jest.fn() }));
 const story: StorySummary = { id: 'spacebattles:thread:9001', source: 'spacebattles', threadId: '9001',
   title: 'Generated story A', author: null, sourceUrl: 'https://forums.spacebattles.com/threads/9001/', categoryId: '9',
   total: 2, downloaded: 2, lastUpdateAttemptAt: null, lastUpdateSuccessAt: null };
 const other = { ...story, id: 'spacebattles:thread:9002', threadId: '9002', title: 'Generated story B', sourceUrl: 'https://forums.spacebattles.com/threads/9002/' };
 const entry = (post: string, name: string, downloaded = true): StoryContentsEntry => ({ id: `${story.id}:post:${post}`,
   postId: post, title: name, position: 0, sourceUrl: story.sourceUrl + `#post-${post}`, downloaded });
-const repository = { getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn() };
+const repository = { getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn(), getImageSummary: jest.fn() };
 const run = jest.mocked(updateNativeStory);
+const imageRun = jest.mocked(downloadNativeImages);
 const unchanged: UpdateResult = { story, failure: null, bodiesDownloaded: 0, reconciliation: {
   added: 0, reactivated: 0, removed: 0, renamed: 0, orderChanged: false, metadataChanged: false, total: 2, downloaded: 2, pending: 0,
 } };
@@ -43,11 +48,12 @@ function setup() {
   repository.getStory.mockImplementation(async (id) => id === other.id ? other : story);
   repository.listContents.mockResolvedValue([entry('101', 'Current first'), { ...entry('102', 'Current second'), position: 1 }]);
   repository.listSavedUnlisted.mockResolvedValue([]);
+  repository.getImageSummary.mockResolvedValue({ unknown: 0, mismatch: 0, scanned: 2, local: 0, pending: 0, omitted: 0 });
   jest.spyOn(AppState, 'addEventListener').mockReturnValue({ remove: jest.fn() });
 }
 beforeAll(() => { setup(); const warm = render(<StoryContents />); warm.unmount(); });
 beforeEach(() => {
-  jest.useFakeTimers(); jest.clearAllMocks(); run.mockReset();
+  jest.useFakeTimers(); jest.clearAllMocks(); run.mockReset(); imageRun.mockReset();
   Object.values(repository).forEach((method) => method.mockReset()); setup();
 });
 afterEach(async () => { await act(async () => { jest.runOnlyPendingTimers(); }); jest.useRealTimers(); jest.restoreAllMocks(); });
@@ -227,4 +233,83 @@ test('failed final SQL refresh clears stale chapter actions rather than opening 
   await waitFor(() => expect(screen.getByText('storage: Could not read local story contents.')).toBeTruthy());
   expect(screen.queryByLabelText('Read Current first')).toBeNull(); expect(screen.queryByLabelText('Resume Download')).toBeNull();
   expect(screen.getByLabelText('Return to Library')).toBeEnabled(); expect(screen.queryByLabelText('Cancel update')).toBeNull();
+});
+
+const unknownImages: ImageSummary = { unknown: 2, scanned: 0, mismatch: 0, local: 0, pending: 0, omitted: 0 };
+test('I2 opening Story starts zero image traffic; deliberate Download Images refreshes separate SQLite status/text counts', async () => {
+  repository.getImageSummary.mockResolvedValue(unknownImages);
+  const local = { ...unknownImages, unknown: 0, scanned: 2, local: 8, omitted: 2, pending: 1 };
+  imageRun.mockImplementation(async (_id, _repo, options) => {
+    options?.onProgress?.({ phase: 'discovering', title: 'Current first', completed: 0, total: 0 });
+    options?.onProgress?.({ phase: 'completed', completed: 0, total: 0 });
+    repository.getImageSummary.mockResolvedValue(local);
+    return { storyId: story.id, summary: local, failure: null };
+  });
+  render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Download Images')).toBeEnabled());
+  expect(imageRun).not.toHaveBeenCalled(); expect(run).not.toHaveBeenCalled();
+  expect(screen.getByText('Images: 2 text chapters not scanned')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Download Images'));
+  await waitFor(() => expect(screen.getByText('Images: 8 local · 2 omitted · 1 pending')).toBeTruthy());
+  expect(screen.getByText('2 / 2 text chapters downloaded')).toBeTruthy();
+  expect(imageRun).toHaveBeenCalledWith(story.id, repository, expect.objectContaining({ signal: expect.anything() }));
+  expect(screen.getByLabelText('Retry Images')).toBeEnabled(); expect(screen.getByLabelText('Read Current first')).toBeEnabled();
+});
+test('I2 fixture has no source-image action even with unexpected source summary rows', async () => {
+  repository.getStory.mockResolvedValue({ ...story, source: 'fixture' }); repository.getImageSummary.mockResolvedValue(unknownImages);
+  render(<StoryContents />); await waitFor(() => expect(screen.getByText(story.title)).toBeTruthy());
+  expect(screen.queryByLabelText('Download Images')).toBeNull(); expect(screen.queryByLabelText('Retry Images')).toBeNull(); expect(imageRun).not.toHaveBeenCalled();
+});
+test.each([
+  [{ ...unknownImages, unknown: 0, scanned: 2 }, 'Images: no source images'],
+  [{ ...unknownImages, unknown: 0, scanned: 2, omitted: 3 }, 'Images: 0 local · 3 omitted · 0 pending'],
+  [{ ...unknownImages, unknown: 0, mismatch: 2 }, 'Images: 2 chapters unavailable: saved text differs'],
+])('I2 permanent/zero results are explicit without a false all-images-downloaded claim', async (summary, text) => {
+  repository.getImageSummary.mockResolvedValue(summary); render(<StoryContents />);
+  await waitFor(() => expect(screen.getByText(text)).toBeTruthy());
+  expect(screen.queryByLabelText('Download Images')).toBeNull(); expect(screen.queryByLabelText('Retry Images')).toBeNull();
+});
+test('I2 Cancel, Read/Library/Resume/native removal guards persist through image settlement and final SQL refresh', async () => {
+  repository.getImageSummary.mockResolvedValue(unknownImages); repository.getStory.mockResolvedValue({ ...story, downloaded: 1 });
+  let finish!: (result: ImageResult) => void, read!: (value: ImageSummary) => void, signal: AbortSignal | undefined;
+  imageRun.mockImplementation((_id, _repo, options) => {
+    signal = options?.signal; options?.onProgress?.({ phase: 'downloading', title: 'Current first', slot: 2, completed: 1, total: 4 });
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Download Images')).toBeEnabled());
+  const handlers = ['Return to Library', 'Read Current first', 'Resume Download'].map((label) => screen.UNSAFE_getAllByType(Control).find((control) => control.props.label === label)!.props.onPress);
+  fireEvent.press(screen.getByLabelText('Download Images'));
+  expect(screen.getByText('Images: 1 / 4 processed · Current first · slot 2')).toBeTruthy();
+  for (const label of ['Read Current first', 'Return to Library', 'Resume Download', 'Check for Updates', 'Download Images']) expect(screen.getByLabelText(label)).toBeDisabled();
+  act(() => handlers.forEach((handler) => handler())); expect(router.push).not.toHaveBeenCalled(); expect(router.replace).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText('Cancel images')); expect(signal?.aborted).toBe(true);
+  repository.getImageSummary.mockReturnValueOnce(new Promise((resolve) => { read = resolve; }));
+  await act(async () => finish({ storyId: story.id, summary: unknownImages, failure: new S1Failure('cancelled', 'Generated image cancellation') }));
+  expect(screen.getByLabelText('Cancel images')).toBeEnabled(); expect(screen.getByLabelText('Read Current first')).toBeDisabled();
+  expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(true);
+  expect(jest.mocked(Stack.Screen).mock.calls.at(-1)![0].options).toMatchObject({ gestureEnabled: false });
+  await act(async () => read({ ...unknownImages, unknown: 0, scanned: 2, local: 1, pending: 3 }));
+  expect(screen.getByLabelText('Retry Images')).toBeEnabled(); expect(screen.getByLabelText('Read Current first')).toBeEnabled();
+  expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(false); expect(screen.queryByLabelText('Cancel images')).toBeNull();
+});
+test('I2 background/route change aborts image work and rejects old progress/result', async () => {
+  repository.getImageSummary.mockResolvedValue(unknownImages);
+  let finish!: (result: ImageResult) => void, signal: AbortSignal | undefined;
+  let progress!: NonNullable<Parameters<typeof downloadNativeImages>[2]>['onProgress'];
+  let background!: (state: AppStateStatus) => void;
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => { background = listener; return { remove: jest.fn() }; });
+  imageRun.mockImplementation((_id, _repo, options) => { signal = options?.signal; progress = options?.onProgress; return new Promise((resolve) => { finish = resolve; }); });
+  const view = render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Download Images')).toBeEnabled());
+  fireEvent.press(screen.getByLabelText('Download Images')); act(() => background('background')); expect(signal?.aborted).toBe(true);
+  jest.mocked(useLocalSearchParams).mockReturnValue({ story: other.id }); view.rerender(<StoryContents />);
+  await waitFor(() => expect(screen.getByText(other.title)).toBeTruthy());
+  await act(async () => { progress?.({ phase: 'discovering', title: 'Old image chapter', completed: 0, total: 0 }); finish({ storyId: story.id, summary: unknownImages, failure: null }); });
+  expect(screen.queryByText(/Old image chapter/)).toBeNull(); expect(screen.queryByLabelText('Cancel images')).toBeNull();
+});
+test('I2 failed final image refresh clears stale chapter/image controls before navigation unlocks', async () => {
+  repository.getImageSummary.mockResolvedValue(unknownImages);
+  imageRun.mockImplementation(async () => { repository.getImageSummary.mockRejectedValueOnce(new Error('Injected image read failure')); return { storyId: story.id, summary: unknownImages, failure: null }; });
+  render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Download Images')).toBeEnabled());
+  fireEvent.press(screen.getByLabelText('Download Images'));
+  await waitFor(() => expect(screen.getByText('storage: Could not read local story contents.')).toBeTruthy());
+  expect(screen.queryByLabelText('Read Current first')).toBeNull(); expect(screen.queryByLabelText('Download Images')).toBeNull(); expect(screen.getByLabelText('Return to Library')).toBeEnabled();
 });

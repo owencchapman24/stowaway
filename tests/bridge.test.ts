@@ -70,6 +70,17 @@ function gesture(type: string, event: Partial<Event>) {
   (documentListeners.get(type) as EventListener)(event as Event);
 }
 
+test.each([false, true])('same-hash restoration retains logical image block identity with local image available=%s', (available) => {
+  const target = document.getElementById('block-0005')!;
+  target.innerHTML = available ? '<img src="source-image-0.png" alt="Synthetic">' : '[Local image unavailable]';
+  const top = available ? 440 : 280;
+  target.getBoundingClientRect = () => ({ top: top - y, bottom: top + 120 - y, height: 120 }) as DOMRect;
+  run(locator);
+  expect(y).toBe(top + locator.offset); expect(document.getElementById(locator.blockId)).toBe(target);
+  expect(messages.map((message) => message.type)).toEqual(['ready']);
+  bridgeWindow.StowawayReader.flush(); expect(messages.filter((message) => message.type === 'position')).toHaveLength(0);
+});
+
 test('restores the same block and spoiler ancestors; initial/reflow scrolls never save top', () => {
   run(locator);
   expect(y).toBe(315);

@@ -30,7 +30,8 @@ const entries = [
   { id: story.id + ':post:101', postId: '101', title: 'First', position: 0, downloaded: true, sourceUrl: threadUrl + '#post-101' },
   { id: story.id + ':post:102', postId: '102', title: 'Second', position: 1, downloaded: false, sourceUrl: threadUrl + '#post-102' },
 ];
-const repository = { listStories: jest.fn(), getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn() };
+const repository = { listStories: jest.fn(), getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn(),
+  getImageSummary: jest.fn(async () => ({ unknown: 0, mismatch: 0, scanned: 0, local: 0, pending: 0, omitted: 0 })) };
 const run = jest.mocked(importNativeStory);
 beforeAll(() => {
   jest.mocked(useStorage).mockReturnValue({ repository, preferences: { theme: 'light', fontSize: 20 }, changePreferences: jest.fn(), imageWarning: null } as unknown as ReturnType<typeof useStorage>);

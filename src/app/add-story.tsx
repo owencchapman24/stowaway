@@ -63,12 +63,13 @@ function AddStoryForm({ id }: { id: string }) {
     saving: `Manifest COMPLETE: ${progress.total} entries. Saving manifest`,
     reconciling: 'Reconciling complete primary manifest',
     downloading: `Downloading text: ${progress.downloaded} / ${progress.total}${progress.title ? ` · ${progress.title}` : ''}`,
+    images: `Downloading eligible images${progress.title ? ` · ${progress.title}` : ''}. Text is already saved.`,
     completed: 'Completed. All primary text downloaded.', cancelled: 'Cancelled. Completed text is retained.', failed: 'Import stopped.',
   }[progress.phase];
   const story = prefilling ? null : result?.story;
   return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.content}>
     <Text accessibilityRole="header" style={styles.heading}>Add SpaceBattles Story</Text>
-    <Text>Personal public-thread text import. Source images are not downloaded in I0.</Text>
+    <Text>Personal public-thread import. Text and eligible local images have separate completion states.</Text>
     <TextInput accessibilityLabel="Public SpaceBattles thread URL" placeholder="Paste a public HTTPS thread URL"
       autoCapitalize="none" autoCorrect={false} keyboardType="url" value={url} onChangeText={editUrl}
       editable={!running && !prefilling} style={styles.input} />
