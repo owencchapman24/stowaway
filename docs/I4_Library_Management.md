@@ -1,6 +1,22 @@
 # I4 — library management, deletion and v0 error polish
 
-Implementation: **7 October 2026, America/New_York**, `feat/library-management`, based on merged I3 main **beb9bab8513053c84bb01b05747529a4b63e2ab9** (PR #7). The October audit controls. **I4 physical acceptance is pending.** Historical I0–I3 evidence is unchanged; the I3 post-acceptance recovery/handoff fixes retain deterministic evidence only. S2B remains deferred, the final Astra whole-repository audit follows v0 feature work, and full v0 remains incomplete. This candidate may be committed/pushed; no PR creation or merge is included.
+Implementation: **7 October 2026, America/New_York**, `feat/library-management`, based on merged I3 main **beb9bab8513053c84bb01b05747529a4b63e2ab9** (PR #7). **CORE I4 PHYSICAL ACCEPTANCE PASSED**, as reported by Owen, on candidate **a06b181879478a159c13c36ee15e5bd45fe92acb**; I4 is not yet merged. The October audit controls. Historical I0–I3 evidence is unchanged; the I3 post-acceptance recovery/handoff fixes retain deterministic evidence only. S0/S1/S2A are accepted and I0/I1/I2/I3 are merged/accepted. S2B remains deferred, full v0 remains incomplete, and the Astra whole-repository audit has not started. Current authorization is acceptance documentation/status cleanup, validation, a separate acceptance commit/push and PR preparation against main; no merge or new product scope.
+
+## Physical acceptance reported by Owen
+
+The [device acceptance record](I4_Device_Checklist.md) distinguishes reported physical passes from conditional cases. This is Owen's iPhone report through Expo Go/Metro, not an agent-observed run or native wire/filesystem inspection. Exact iPhone/iOS/Expo Go versions, run time and the selected removal story's name were not supplied.
+
+- **v5 → v6 preservation passed without reset:** existing imported stories/counts, Aenys text/local images, fixture/harbor, Read flags/unread totals, saved passages, preferences and update attempt/success history survived. Opening Library/Contents started no source/image work.
+- **Native confirmations/cancel passed:** the management actions and stronger full-removal semantics were clear. Cancel preserved text/images/counts/Read/passage/history, including cancellation at the second full-removal confirmation. No VoiceOver-specific pass is claimed.
+- **Remove Downloads passed:** the story remained with zero current downloaded text, intact total/unread counts, flags and history, Not downloaded/unreadable entries, explicit Resume and coherent image state. Force-quit/relaunch through Expo Go/Metro retained this state; repeating removal was harmless. This demonstrates retained shells/body availability at the visible application level.
+- **Explicit Resume passed:** current missing text and normal local images returned, retained Read/unread/passage state remained usable, and navigation/typography/theme worked. Passage usability follows established same-hash/fallback restoration; exact hashes were not inspected. A deliberate unchanged Check for Updates preserved the restored state. Opening screens did not initiate downloads.
+- **Full Remove Story and fresh same-thread import passed:** both destructive confirmations removed the story, including across relaunch, without immediate resurrection. Other stories/state, fixture/harbor and preferences survived; S1/S2A diagnostics remained present. Deliberate same-thread import produced one fresh story with new/Unread state and no prior passage, Read history or update history. Diagnostic presence does not establish physical inspection of isolated resources.
+- **Image Retry recovery passed with qualification:** "An image-download interruption coincided with switching apps; two PNGs did not complete initially and both succeeded on explicit Retry." App switching may have contributed, but causation was not established; this was not a controlled background-interruption experiment.
+- **Already-running offline sanity passed:** after networking was disabled, downloaded text and at least one local source image rendered, local manual Read correction updated counts, and Next/Previous/Contents worked. No image work remained pending after Retry; networking was then restored. This does not establish independent installation, Metro-free cold start or first launch in airplane mode.
+
+Demonstrated loop: existing v5 library → v6 preservation → safe cancellation → Remove Downloads → retained metadata/Read/progress/update history → restart → explicit Resume → readable bodies restored with retained state → Remove Story through two confirmations → restart → fresh same-thread import → coherent local/offline reader.
+
+**Physically not exercised:** actual SQLite/transaction failure during either removal action; actual post-COMMIT source/render cleanup failure and Retry Cleanup; naturally saved-unlisted removal followed by natural reappearance; force-kill at the destructive transaction/cleanup boundary; deliberate rapid/stale confirmation-handler races; naturally occurring blocked/incomplete/parser/storage error presentation; and VoiceOver management/confirmations. Deterministic host/UI/file evidence remains separate for covered rollback, cleanup, race, mutation and failure cases. Forensic secure deletion is neither implemented nor demonstrated; S2B independent/Metro-free offline cold start remains deferred. Host tests do not certify either property or VoiceOver.
 
 ## Storage and migration
 
@@ -82,9 +98,9 @@ New tests: `tests/integration/i4-management.test.ts` and `tests/integration/i4-u
 | Ownership/UI 38–42 | Source/image/manual and cross-handle ownership, controls/back guards through commit + refresh and blur/refocus, duplicate action suppression and story-specific retained callbacks. |
 | Errors 43–49 | Add Story/Contents blocked/challenge/incomplete/parser/network/storage presentation, no misleading Up to date, actual removal rollback and post-commit cleanup warning/retry. |
 
-No physical I4 run is claimed; follow [the device checklist](I4_Device_Checklist.md).
+Physical acceptance is separately recorded above and in [the device record](I4_Device_Checklist.md); host tests do not upgrade conditional cases to physical passes.
 
-Final validation on **7 October 2026**, Node **22.23.3** / npm **10.9.9**:
+Implementation-candidate validation on **7 October 2026**, Node **22.23.3** / npm **10.9.9**:
 
 | Command | Result |
 | --- | --- |
@@ -96,6 +112,8 @@ Final validation on **7 October 2026**, Node **22.23.3** / npm **10.9.9**:
 
 Expo metadata/npm registry checks first encountered sandbox EACCES and passed with the required network access. No SpaceBattles request was made. Generated output is uncommitted. Node's experimental host-SQLite notice and Metro color-environment notices are informational. The final suite has no React act warnings.
 
+Acceptance-bookkeeping validation repeated on **7 October 2026**, with the same Node/npm versions: `npm.cmd run check` passed TypeScript/lint and **638 tests / 28 suites**; `npx.cmd expo install --check` reported dependencies up to date; `npx.cmd expo-doctor@latest` passed **21/21**; `npx.cmd expo export --platform ios` passed with **1,254 modules** to ignored `dist/`; and `git diff --check` passed. Package/lockfile and tests are unchanged. The known LOW I3 cold-Windows timeout flake did not occur, so no test correction was made. A separate sequential documentation diff review checked candidate identity, reported passes/qualifications, all ten unexercised cases, status boundaries and preservation of historical evidence. Only the four requested acceptance/status documents changed; no story prose, raw pages, source-image bytes or screenshots were added.
+
 ## Separate sequential review
 
 After the initial completed candidate passed full checks/export, a separate sequential self-review traced every chapter-row-existence query, locator FK retention, same/changed-hash redownload, current/unlisted reconciliation, FK deletion order, source/image cleanup snapshots and staged/shared files, rollback, native confirmation callbacks, cross-handle ownership, blur/refocus and final refresh, fixture/S2A isolation and truthful failure wording. This is a scoped diff/security self-review, not an independent agent review, physical certification or the deferred Astra whole-repository audit.
@@ -106,7 +124,7 @@ Findings/fixes included immediate identity snapshots for queued destructive call
 
 Removal uses batched SQL updates/deletes and one transaction per action, plus a distinct path capture and linear candidate cleanup. No per-chapter deletion transaction or obvious quadratic deletion loop is introduced. Render inspection is linear in existing render directories. Existing global `PRAGMA foreign_key_check` code remains unchanged; I4 adds no per-row FK checks and generally reduces referenced rows, but does not claim measured performance improvement. Concurrent S1 diagnostic request-budget accounting is unchanged; its prior-image baseline still applies.
 
-No live SpaceBattles requests, automatic source/image jobs, additional categories/sites, backend/sync/accounts, search, backups/exports, scheduling, notifications, analytics, S2B, EAS/signing/paid build, Astra whole-repository audit, PR creation or merge. Unmarked legacy disposable renders are intentionally left for safety. Native confirmation/accessibility, v5-to-v6 preservation on the existing phone library, physical relaunch/offline deletion/redownload, genuine saved-unlisted mutations, native failure recovery and interrupted cleanup remain unverified until Owen reports them.
+No live SpaceBattles requests were made during implementation/review or acceptance bookkeeping. No automatic source/image jobs, additional categories/sites, backend/sync/accounts, search, backups/exports, scheduling, notifications, analytics, S2B, EAS/signing/paid build or new product feature was added in bookkeeping. The Astra whole-repository audit has not started and no PR is merged. Unmarked legacy disposable renders are intentionally left for safety. Physical acceptance and its unexercised cases are recorded above; logical deletion does not promise forensic secure erasure.
 
 ## Candidate file inventory
 
