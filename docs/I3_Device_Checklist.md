@@ -97,3 +97,15 @@ npm.cmd start
 Use the existing SDK 57 Expo Go/Metro setup and phone library. Preserve data: no uninstall, clear/reset/reseed, deliberate source mutation or corruption of normal files. Source actions remain deliberate within the selected personal scope; stop on blocked/login/challenge results without cookies/auth/proxy/bypass. Record metadata only, without prose/raw pages/image bytes/screenshots in Git. Existing historical I0/I1/I2 acceptance does not expand the I3 report's scope.
 
 **CORE I3 PHYSICAL ACCEPTANCE PASSED.** PR preparation is authorized; no merge, deletion/library management, automatic source/image work, S2B, final Astra audit or next product slice follows from acceptance.
+
+## Post-acceptance recovery fix — physical regression not performed
+
+PR #7's adversarial review found failed automatic Read completion could be forgotten when Retry/Reopen or WebView termination replaced the reader session. The targeted correction now settles known local progress before controlled remount, retains intent/error while saving still fails, and permits eventual recovery without another end interaction. Read/locator persistence remains independent. Deterministic actual Reader/ChapterReader tests with host SQLite establish these paths; **no new physical failure/recovery pass is recorded**. Historical core acceptance and all seven conditional qualifications above remain intact.
+
+Focused physical regression is useful, but forcing storage failure or WKWebView process termination is not an ordinary Expo Go control. No fault-injection UI or normal-library corruption/reset is added. Keep injected failures in synthetic tests; do not fill storage, delete/corrupt good files or reset the library to manufacture them.
+
+- [ ] **Practical local reader regression:** use the existing phone library through the usual Expo Go/Metro setup; confirm opening/restoration still does not mark Unread chapters Read, genuine end interaction does, and immediate Next/Contents preserves progress with usable passages, preferences and Aenys local images. Source actions are unnecessary.
+- [ ] **Retry after a naturally occurring local Read-save error, if available:** retain the reported error/state; Retry while storage is still unavailable must not silently reopen/forget completion. After recovery, Retry should save Read and reopen without requiring another end interaction, preserving the saved passage. Otherwise retain host-tested/unexercised status.
+- [ ] **Actual WKWebView termination recovery, if safely observable:** confirm already-accepted pending completion survives renderer recovery and later saves without another end interaction. Failure must remain actionable. Native process termination was not induced by the automated UI handler test; record unavailable cases as unexercised.
+
+These are focused follow-up checks, not a revocation of unrelated acceptance or a bundled offline cold-start/S2B claim. PR #7 must remain unmerged. No deletion, automatic source/image job, next product slice or final Astra audit is included.

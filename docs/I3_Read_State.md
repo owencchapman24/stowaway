@@ -129,3 +129,28 @@ Bookkeeping validation on **7 October 2026**, Node **22.23.3** / npm **10.9.9**:
 No live SpaceBattles request was made during bookkeeping; Expo metadata and GitHub validation traffic are separate. No prose/raw pages/image bytes/screenshots or generated exports are included in the acceptance commit. Global FK performance and concurrent S1 diagnostic request-budget accounting remain deferred. No deletion or automatic source/image job was added; S2B remains deferred and full v0 incomplete.
 
 GitHub CLI is unavailable. PR title: **I3: Persistent read and unread state**. The prepared body is saved outside tracked Git at ignored **.tools/I3_PR_Body.md**. Open the [main-to-I3 comparison](https://github.com/owencchapman24/stowaway/compare/main...feat/read-state?expand=1), confirm base **main** / compare **feat/read-state**, paste the title and saved body, then select **Create pull request**. No PR was created by this fallback; **no merge is authorized**.
+
+## Post-acceptance failed-save recovery fix — PR #7
+
+The adversarial review of **b1cc6cdb3f9241b9114b07fcad994ce6873c545b** found one **MEDIUM / PROVEN BUG**: a failed automatic Read save retained completion intent in `ReadEndSession`, but Retry/Reopen and WebView process-termination recovery directly replaced the keyed reader. The new session forgot that accepted completion. A host-SQLite UI probe reproduced a recovered storage path that exited successfully while the chapter remained Unread. Ordinary successful in-flight writes were not cancelled by unmount; the defect concerned failed, retryable intent.
+
+The narrow correction keeps the existing session alive until local progress settles. Both controlled reopen paths use the same two-stage Read/locator flush as navigation. If saving succeeds, the route's existing attempt key may replace the reader; if it still fails, the old session and pending completion remain, with an actionable Retry error. A later retry persists the already-authorized completion without another end interaction. The navigation/recovery ref prevents overlapping exits, retained Retry handlers and termination events from starting competing remounts. A stale async recovery cannot reopen a different/unmounted model.
+
+Known failed/terminated WebViews are not sampled for another bridge flush. Termination releases any outstanding flush acknowledgement, marks the renderer unavailable and retries only locally known progress; the second native settlement remains in place. Read and locator saves still use `Promise.allSettled`, so either queue settles independently. A successfully saved Read is deduplicated within that session, including during reopen; no new completion is inferred from loading/restoration. Initial local-render failure with no model still uses ordinary Retry. No route coordinator, new persistence framework, migration or source behavior is added.
+
+**Ten regression cases** in **tests/integration/i3-ui.test.tsx** exercise actual Reader/ChapterReader recovery handlers with real host SQLite: Retry and termination after an injected COMMIT failure; repeated failures that refuse remount while independently saving a locator; gated recovery blocking duplicate controls/navigation; ordinary initial-render Retry; termination without a completion request; successful completion/reopen without a duplicate Read write; and callback-free S2A reader reuse. Six targeted recovery cases failed against the pre-fix implementation before passing after correction. Existing immediate Next/Previous/Contents and failure tests remain intact.
+
+Historical **CORE I3 PHYSICAL ACCEPTANCE PASSED** remains recorded for its tested implementation. This correction has deterministic/host evidence only; no new physical storage-failure or WKWebView-termination pass is claimed. The [focused device notes](I3_Device_Checklist.md#post-acceptance-recovery-fix--physical-regression-not-performed) retain that distinction. PR #7 remains open and unmerged; no new PR, next product slice, deletion/library management, S2B or final Astra audit is authorized. Deferred global FK performance and concurrent S1 request-budget accounting remain unchanged by this fix.
+
+Fix validation on **7 October 2026**, Node **22.23.3** / npm **10.9.9**:
+
+| Command | Result |
+| --- | --- |
+| `npm.cmd test -- --runTestsByPath tests/integration/i3-ui.test.tsx` | **28/28 passed**, including the **10 added recovery cases**. |
+| `npm.cmd run check` | Strict TypeScript, lint and **550 tests / 26 suites passed**; all 540 prior cases retained. |
+| `npx.cmd expo install --check` | Dependencies up to date; no package/lockfile changes. |
+| `npx.cmd expo-doctor@latest` | **21/21 checks passed**. |
+| `npx.cmd expo export --platform ios` | Local iOS Hermes export passed, **1,249 modules**, to ignored `dist/`. |
+| `git diff --check` | Passed. |
+
+The separate sequential review of only this completed fix inspected every controlled remount, the shared navigation/recovery guard, model identity after async settlement, failed-renderer sampling, both independent persistence queues, repeated failures and successful-write deduplication. No additional blocking defect was found. This was a sequential self-review, not another Ultra review or a native certification. The fix changes only **src/reader/ChapterReader.tsx**, **tests/integration/i3-ui.test.tsx** and the two I3 documents. Storage/read-count/reconciliation/image/bridge/source behavior, dependencies and S2A schema/isolation are unchanged. No live SpaceBattles request, normal-library fault injection, new product scope or physical run occurred.

@@ -42,6 +42,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const exiting = useRef(false);
+  const webFailed = useRef(false);
   const flushAcknowledgement = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -88,15 +89,16 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     };
     // Persist already received samples even if the WebView is about to suspend.
     await saveProgress();
-    if (!web.current) return;
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        flushAcknowledgement.current = null;
-        resolve();
-      }, 600);
-      flushAcknowledgement.current = () => { clearTimeout(timer); resolve(); };
-      web.current?.injectJavaScript('window.StowawayReader && window.StowawayReader.flush(); true;');
-    });
+    if (web.current && !webFailed.current) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          flushAcknowledgement.current = null;
+          resolve();
+        }, 600);
+        flushAcknowledgement.current = () => { clearTimeout(timer); resolve(); };
+        web.current?.injectJavaScript('window.StowawayReader && window.StowawayReader.flush(); true;');
+      });
+    }
     await saveProgress();
   }, []);
 
@@ -119,6 +121,30 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       exiting.current = false;
       setError(failure instanceof Error ? failure.message : 'Could not save before leaving. Please retry.');
     }
+  }
+
+  async function reopen() {
+    if (exiting.current) return;
+    exiting.current = true;
+    const current = modelRef.current;
+    if (!current) { onRetry(); return; }
+    try {
+      // Keep the session (and failed completion intent) until local saves succeed.
+      await flushForExit();
+      if (modelRef.current === current) onRetry();
+    } catch {
+      if (modelRef.current === current) {
+        exiting.current = false;
+        setError('Could not save local progress before reopening. Your pending saves are retained. Please retry.');
+      }
+    }
+  }
+
+  function onTerminated() {
+    webFailed.current = true;
+    setReady(false);
+    flushAcknowledgement.current?.();
+    void reopen();
   }
 
   async function restyle(value: Preferences) {
@@ -160,7 +186,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     <Text style={styles.title} numberOfLines={2} accessibilityRole="header">{model?.chapter.title ?? 'Reader'}</Text>
     <ReaderControls preferences={preferences} disabled={!ready} onChange={(value) => { void restyle(value); }} />
     {error && <View style={styles.status}><Text accessibilityRole="alert">{error}</Text>
-      <Control label="Reopen local chapter" text="Retry" onPress={onRetry} /></View>}
+      <Control label="Reopen local chapter" text="Retry" onPress={() => { void reopen(); }} /></View>}
     {!ready && !error && <View style={styles.status}><ActivityIndicator /><Text>Restoring your passage…</Text></View>}
     {model && <WebView ref={web} source={{ uri: model.file.uri }}
       style={[styles.reader, { opacity: ready ? 1 : 0, backgroundColor: preferences.theme === 'dark' ? '#15191e' : '#faf7f0' }]}
@@ -169,8 +195,8 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       originWhitelist={['*']}
       onShouldStartLoadWithRequest={(request) => allowReaderNavigation(request.url, model.file.uri)}
       onMessage={(event) => onMessage(event.nativeEvent.data)}
-      onError={() => { setReady(false); setError('Local WebView could not load. Reopen this chapter to retry.'); }}
-      onContentProcessDidTerminate={onRetry}
+      onError={() => { webFailed.current = true; setReady(false); setError('Local WebView could not load. Reopen this chapter to retry.'); }}
+      onContentProcessDidTerminate={onTerminated}
       javaScriptEnabled javaScriptCanOpenWindowsAutomatically={false}
       onOpenWindow={() => undefined} setSupportMultipleWindows={false}
       allowFileAccess allowFileAccessFromFileURLs={false} allowUniversalAccessFromFileURLs={false}
