@@ -7,6 +7,7 @@ import type { ImportProgress, ImportResult } from '../importing/import-story';
 import { Control } from '../reader/controls';
 import { screenStyles as styles } from '../reader/screen-styles';
 import { useStorage } from '../storage/context';
+import { failureContext } from '../importing/failure-presentation';
 
 export default function AddStory() {
   const params = useLocalSearchParams<{ story?: string }>();
@@ -35,7 +36,7 @@ function AddStoryForm({ id }: { id: string }) {
     if (id) repository.getStory(id).then((story) => {
       if (active) {
         setUrl(story?.sourceUrl ?? ''); setResult(story ? { story, failure: null } : null); setProgress(null);
-        setLocalError(null);
+        setLocalError(story ? null : 'Story is not in the local library.');
       }
     }).catch(() => { if (active) {
       setUrl(''); setResult(null); setProgress(null); setLocalError('storage: Could not read the saved story.');
@@ -51,7 +52,7 @@ function AddStoryForm({ id }: { id: string }) {
       const outcome = await importNativeStory(value, repository, { signal: controller.signal,
         onProgress: (next) => { if (mounted.current) setProgress(next); } });
       if (mounted.current) setResult(outcome);
-    } catch { if (mounted.current) setLocalError('Import failed; completed text is retained.'); }
+    } catch { if (mounted.current) setLocalError('Local operation failed; completed text is retained. Reopen the local story and retry.'); }
     finally { abort.current = null; if (mounted.current) setRunning(false); }
   }
   function editUrl(value: string) {
@@ -77,7 +78,8 @@ function AddStoryForm({ id }: { id: string }) {
     {running && <Control label="Cancel import" text="Cancel" onPress={() => abort.current?.abort()} />}
     <Text accessibilityLiveRegion="polite">{status}</Text>
     {localError && <Text accessibilityRole="alert">{localError}</Text>}
-    {result?.failure && <Text accessibilityRole="alert">{result.failure.code}: {result.failure.message}</Text>}
+    {result?.failure && <><Text accessibilityRole="alert">{result.failure.code}: {result.failure.message}</Text>
+      <Text>{failureContext(result.failure)}</Text></>}
     {story && <><Text>{story.title}: {story.downloaded} / {story.total} text chapters downloaded</Text>
       {story.downloaded < story.total && <Control label="Resume Download" text="Resume Download" disabled={running}
         onPress={() => { void run(story.sourceUrl); }} />}

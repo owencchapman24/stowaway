@@ -55,7 +55,7 @@ export function createSourceImageFiles(files: LocalFiles, digest: (bytes: Uint8A
         return { file, release };
       } catch (error) { release(); throw error; }
     },
-    async cleanup(references: () => Promise<string[]>) {
+    async cleanup(references: () => Promise<string[]>, candidates?: string[]) {
       while (ownership.cleanup) await ownership.cleanup;
       let finish!: () => void;
       ownership.cleanup = new Promise<void>((resolve) => { finish = resolve; });
@@ -65,10 +65,10 @@ export function createSourceImageFiles(files: LocalFiles, digest: (bytes: Uint8A
       try {
         const referenced = new Set(await references());
         let removed = 0;
-        for (const name of files.list('source-assets')) {
-          const path = `source-assets/${name}`;
+        const paths = candidates ?? files.list('source-assets').map((name) => `source-assets/${name}`);
+        for (const path of new Set(paths)) {
           try { sourceAssetPath(path); } catch { continue; }
-          if (referenced.has(path) || protectedFiles.has(path) || ownership.active.has(path) || files.isDirectory(path)) continue;
+          if (referenced.has(path) || protectedFiles.has(path) || ownership.active.has(path) || !files.exists(path) || files.isDirectory(path)) continue;
           files.remove(path); removed++;
         }
         return removed;

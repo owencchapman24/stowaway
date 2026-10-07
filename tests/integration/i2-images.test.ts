@@ -79,7 +79,7 @@ test.each([0, 1, 2, 3])('fresh/v%s migrates to latest non-destructively; S2A v1 
     bodies: await host.db.getAllAsync('SELECT id, story_id, post_id, title, position, html, content_hash, sanitizer_version, block_ids, links FROM chapters ORDER BY id'),
     positions: await host.db.getAllAsync('SELECT * FROM reading_positions'), settings: await host.db.getAllAsync('SELECT * FROM settings'), assets: await host.db.getAllAsync('SELECT * FROM assets') } : null;
   await migrate(host.db); await migrate(host.db);
-  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 5 });
+  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 6 });
   if (before) {
     expect(await host.db.getAllAsync('SELECT id, source, thread_id, title, author FROM stories ORDER BY id')).toEqual(before.stories);
     expect(await host.db.getAllAsync('SELECT id, story_id, post_id, title, position, html, content_hash, sanitizer_version, block_ids, links FROM chapters ORDER BY id')).toEqual(before.bodies);
@@ -226,7 +226,7 @@ test('stored 58-slot/8-MIME-omission library retries only those slots, preserves
   const after = await repo.listChapterImages(chapterId); expect(after).toHaveLength(58); expect(after.slice(0, 50)).toEqual(slots.slice(0, 50));
   expect(after.map(({ slot, blockId, sourceUrl }) => ({ slot, blockId, sourceUrl }))).toEqual(slots.map(({ slot, blockId, sourceUrl }) => ({ slot, blockId, sourceUrl })));
   expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
-  expect(await repo.getStory(id)).toMatchObject({ downloaded: 1, total: 1 }); expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 5 });
+  expect(await repo.getStory(id)).toMatchObject({ downloaded: 1, total: 1 }); expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 6 });
   expect(result.mimeDiagnostics).toHaveLength(8);
   const retry = source(); await run(retry); expect(retry.calls).toEqual([]);
 });

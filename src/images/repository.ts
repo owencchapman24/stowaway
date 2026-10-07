@@ -4,6 +4,7 @@ import { classifyImageUrl } from './source-url';
 import { validateImageReference } from './files';
 import { validateSlots } from './slots';
 import type { ChapterImage, ImageDiscovery, ImageFile, ImageReason, ImageSlot, ImageSummary } from './types';
+import { availableBody } from '../storage/availability';
 
 function cancelled(signal?: AbortSignal) { if (signal?.aborted) throw new Error('Image commit cancelled.'); }
 export async function insertImageSlots(tx: SqlConnection, id: string, content: Pick<Chapter, 'html' | 'blockIds'>,
@@ -29,7 +30,8 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
       // Reader is also used by isolated S2A v1, which has no source image model.
       const version = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
       if ((version?.user_version ?? 0) < 4) return [];
-      const rows = await db.getAllAsync<ImageRow>('SELECT * FROM chapter_images WHERE chapter_id = ? ORDER BY slot', id);
+      const rows = await db.getAllAsync<ImageRow>(`SELECT i.* FROM chapter_images i JOIN chapters c ON c.id = i.chapter_id
+        WHERE i.chapter_id = ? AND (${await availableBody(db)}) ORDER BY i.slot`, id);
       return rows.map((row) => ({ chapterId: row.chapter_id, slot: row.slot, blockId: row.block_id,
         sourceUrl: row.source_url, alt: row.alt, state: row.state, reason: row.reason,
         file: row.relative_path ? { relativePath: row.relative_path, format: row.format,
@@ -39,7 +41,7 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
       return db.getAllAsync(`SELECT c.id, c.post_id AS postId, e.title, e.source_url AS sourceUrl, c.image_discovery AS discovery
         FROM chapters c JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
         JOIN stories s ON s.id = c.story_id WHERE c.story_id = ? AND e.currently_listed = 1
-        AND s.source = 'spacebattles' ORDER BY e.position`, storyId);
+        AND s.source = 'spacebattles' AND (${await availableBody(db)}) ORDER BY e.position`, storyId);
     },
     async getImageSummary(storyId: string): Promise<ImageSummary> {
       const discovery = await db.getFirstAsync<{ unknown: number; mismatch: number; scanned: number }>(`SELECT
@@ -47,13 +49,13 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
         COALESCE(SUM(c.image_discovery = 'saved-text-mismatch'), 0) AS mismatch,
         COALESCE(SUM(c.image_discovery = 'scanned'), 0) AS scanned
         FROM chapters c JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
-        WHERE c.story_id = ? AND e.currently_listed = 1`, storyId);
+        WHERE c.story_id = ? AND e.currently_listed = 1 AND (${await availableBody(db)})`, storyId);
       const counts = await db.getFirstAsync<{ local: number; pending: number; omitted: number; mimeRetryable: number }>(`SELECT
         COALESCE(SUM(i.state = 'downloaded'), 0) AS local, COALESCE(SUM(i.state = 'pending'), 0) AS pending,
         COALESCE(SUM(i.state = 'omitted'), 0) AS omitted,
         COALESCE(SUM(i.state = 'omitted' AND i.reason = 'content-type-mismatch'), 0) AS mimeRetryable FROM chapter_images i
         JOIN chapters c ON c.id = i.chapter_id JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
-        WHERE c.story_id = ? AND e.currently_listed = 1`, storyId);
+        WHERE c.story_id = ? AND e.currently_listed = 1 AND (${await availableBody(db)})`, storyId);
       return { unknown: 0, mismatch: 0, scanned: 0, local: 0, pending: 0, omitted: 0, mimeRetryable: 0, ...discovery, ...counts };
     },
     async commitImageDiscovery(id: string, expectedHash: string, slots: ImageSlot[] | null, signal?: AbortSignal) {
@@ -62,7 +64,7 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
         const chapter = await tx.getFirstAsync<{ html: string; block_ids: string; content_hash: string; image_discovery: ImageDiscovery }>(
           `SELECT c.html, c.block_ids, c.content_hash, c.image_discovery FROM chapters c
            JOIN stories s ON s.id = c.story_id JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
-           WHERE c.id = ? AND s.source = 'spacebattles' AND e.currently_listed = 1`, id);
+           WHERE c.id = ? AND s.source = 'spacebattles' AND e.currently_listed = 1 AND (${await availableBody(tx)})`, id);
         if (!chapter || chapter.content_hash !== expectedHash) throw new Error('Image discovery identity changed.');
         if (chapter.image_discovery !== 'unknown') return;
         if (slots) await insertImageSlots(tx, id, { html: chapter.html, blockIds: JSON.parse(chapter.block_ids) }, slots, signal);
@@ -75,7 +77,7 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
         cancelled(signal);
         const owner = await tx.getFirstAsync(`SELECT c.id FROM chapters c JOIN stories s ON s.id = c.story_id
           JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
-          WHERE c.id = ? AND c.story_id = ? AND s.source = 'spacebattles' AND e.currently_listed = 1`, chapter, storyId);
+          WHERE c.id = ? AND c.story_id = ? AND s.source = 'spacebattles' AND e.currently_listed = 1 AND (${await availableBody(tx)})`, chapter, storyId);
         if (!owner) throw new Error('Image result belongs to a different or unlisted story/chapter.');
         for (const change of changes) {
           cancelled(signal);

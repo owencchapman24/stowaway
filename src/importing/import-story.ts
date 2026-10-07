@@ -31,6 +31,7 @@ interface OperationOptions {
   signal?: AbortSignal; onProgress?: (progress: ImportProgress) => void;
   now?: () => number;
   imageFiles?: SourceImageFiles;
+  onSettled?: () => Promise<void>;
 }
 export async function importStory(value: string, repository: Repository, client: RequestClient,
   digest: (value: string) => Promise<string>, options: OperationOptions = {}): Promise<ImportResult> {
@@ -138,6 +139,6 @@ async function operateStory(value: string, repository: Repository, client: Reque
     return { story, failure, reconciliation, bodiesDownloaded };
   } finally {
     cached = null;
-    release?.();
+    try { await options.onSettled?.(); } finally { release?.(); }
   }
 }

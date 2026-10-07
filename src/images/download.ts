@@ -12,7 +12,7 @@ import type { ImageMimeDiagnostic, ImageSummary } from './types';
 
 export interface ImageProgress { phase: 'discovering' | 'downloading' | 'completed' | 'cancelled' | 'failed'; title?: string; slot?: number; completed: number; total: number }
 export interface ImageResult { storyId: string; summary: ImageSummary | null; failure: S1Failure | ImportFailure | null; mimeDiagnostics?: ImageMimeDiagnostic[] }
-export interface ImageOptions { signal?: AbortSignal; onProgress?: (progress: ImageProgress) => void }
+export interface ImageOptions { signal?: AbortSignal; onProgress?: (progress: ImageProgress) => void; onSettled?: () => Promise<void> }
 function cancelled(signal?: AbortSignal) { if (signal?.aborted) throw new S1Failure('cancelled', 'Image work cancelled; text and completed local images are retained.'); }
 async function storage<T>(work: () => Promise<T>): Promise<T> {
   try { return await work(); } catch (error) {
@@ -86,6 +86,7 @@ export async function downloadImages(storyId: string, repository: Repository, cl
   let cached: Document | null = null;
   let cachedKey: string | null = null;
   let failure: ImageResult['failure'] = null;
+  let summary: ImageSummary | null = null;
   const mimeDiagnostics: ImageMimeDiagnostic[] = [];
   try {
     cancelled(options.signal); release = acquireStory(storyId);
@@ -134,9 +135,11 @@ export async function downloadImages(storyId: string, repository: Repository, cl
     cancelled(options.signal);
   } catch (error) {
     failure = error instanceof S1Failure || error instanceof ImportFailure ? error : new S1Failure('parser', 'Image discovery could not parse the selected chapter.');
-  } finally { cached = null; release?.(); }
-  let summary: ImageSummary | null = null;
-  try { summary = await repository.getImageSummary(storyId); } catch { /* Retain typed operation failure. */ }
+  } finally {
+    cached = null;
+    try { summary = await repository.getImageSummary(storyId); } catch { /* Retain typed operation failure. */ }
+    try { await options.onSettled?.(); } finally { release?.(); }
+  }
   options.onProgress?.({ phase: failure ? (failure.code === 'cancelled' ? 'cancelled' : 'failed') : 'completed', completed: 0, total: 0 });
   return { storyId, summary, failure, mimeDiagnostics };
 }
