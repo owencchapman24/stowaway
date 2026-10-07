@@ -89,3 +89,13 @@ test('read-end accepts only the exact four-field current identity, under the exi
   expect(parseMessage(JSON.stringify(message), chapter, identity.session)).toEqual(message);
   expect(parseMessage(JSON.stringify({ ...message, extra: 'x'.repeat(16_000) }), chapter, identity.session)).toBeNull();
 });
+
+test('quiesced accepts only a bounded handoff id with the exact current identity and message shape', () => {
+  const message = { ...identity, type: 'quiesced', handoffId: 'session-1:2' };
+  expect(parseMessage(JSON.stringify(message), chapter, identity.session)).toEqual(message);
+  for (const fields of [{ handoffId: undefined }, { handoffId: null }, { handoffId: 1 }, { handoffId: {} },
+    { handoffId: '' }, { handoffId: 'x'.repeat(101) }, { handoffId: 'bad id' }, { extra: true },
+    { type: 'quiesced-forged' }, { session: 'old' }, { chapterId: 'other' }, { contentHash: 'old' }]) {
+    expect(parseMessage(JSON.stringify({ ...message, ...fields }), chapter, identity.session)).toBeNull();
+  }
+});

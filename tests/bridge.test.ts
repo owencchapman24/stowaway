@@ -4,10 +4,11 @@ import type { Locator } from '../src/domain/types';
 
 type BridgeWindow = Window & typeof globalThis & {
   ReactNativeWebView: { postMessage: (raw: string) => void };
-  StowawayReader: { flush: () => void; restyle: (size: number, theme: string) => void; setInteractionEnabled: (enabled: boolean) => void };
+  StowawayReader: { flush: () => void; restyle: (size: number, theme: string) => void; setInteractionEnabled: (enabled: boolean) => void;
+    prepareForExit: (handoffId: string) => void };
 };
 const bridgeWindow = window as BridgeWindow;
-let messages: { type: string; locator?: Locator; linkId?: string }[];
+let messages: { type: string; locator?: Locator; linkId?: string; handoffId?: string }[];
 let y: number;
 let documentListeners: Map<string, EventListenerOrEventListenerObject[]>;
 let cleanups: (() => void)[];
@@ -74,6 +75,44 @@ function readingGesture(type = 'touchmove', trusted = true, target: EventTarget 
   gesture(type, { isTrusted: trusted, target, preventDefault: jest.fn() });
 }
 const completions = () => messages.filter((message) => message.type === 'read-end');
+
+test('prepareForExit flushes the dirty locator before matching quiescence and freezes fresh trusted input until recovery', () => {
+  run(null); gesture('touchstart', { isTrusted: true }); readingGesture(); window.scrollTo(0, 300);
+  bridgeWindow.StowawayReader.prepareForExit('handoff-A');
+  expect(messages.map((message) => message.type)).toEqual(['ready', 'position', 'quiesced']);
+  expect(messages.at(-1)).toEqual({ type: 'quiesced', handoffId: 'handoff-A', session: 'session', chapterId: 'chapter', contentHash: 'hash' });
+  window.scrollTo(0, 800); readingGesture('touchend'); readingGesture('click', true, document.querySelector('a')!);
+  jest.runAllTimers(); expect(completions()).toEqual([]); expect(messages.filter((message) => message.type === 'link')).toEqual([]);
+  expect(messages.filter((message) => message.type === 'position')).toHaveLength(1);
+  bridgeWindow.StowawayReader.setInteractionEnabled(true); window.dispatchEvent(new Event('scroll'));
+  expect(completions()).toEqual([]); readingGesture('touchend'); expect(completions()).toHaveLength(1);
+});
+
+test('already generated completion precedes quiescence and stays deduplicated after failed-handoff recovery', () => {
+  run(null); gesture('touchstart', { isTrusted: true }); readingGesture(); window.scrollTo(0, 800);
+  bridgeWindow.StowawayReader.prepareForExit('handoff-A');
+  expect(messages.map((message) => message.type)).toEqual(['ready', 'read-end', 'position', 'quiesced']);
+  bridgeWindow.StowawayReader.setInteractionEnabled(true); readingGesture('touchend');
+  bridgeWindow.StowawayReader.prepareForExit('handoff-B');
+  expect(completions()).toHaveLength(1); expect(messages.at(-1)?.handoffId).toBe('handoff-B');
+});
+
+test('quiescing while restoration is pending does not save a transient locator or resume trusted input on ready', () => {
+  new Function('CONFIG', POSITION_BRIDGE)({ session: 'session', chapterId: 'chapter', contentHash: 'hash', locator });
+  bridgeWindow.StowawayReader.prepareForExit('handoff-A');
+  expect(messages.map((message) => message.type)).toEqual(['quiesced']);
+  jest.runAllTimers(); window.scrollTo(0, 800); readingGesture('touchend');
+  expect(messages.map((message) => message.type)).toEqual(['quiesced', 'ready']);
+});
+
+test('invalid handoff command arguments never produce a quiescence acknowledgement', () => {
+  run(null);
+  for (const invalid of ['', 'x'.repeat(101), 'bad id', null, 1, {}]) {
+    bridgeWindow.StowawayReader.prepareForExit(invalid as string);
+  }
+  expect(messages.map((message) => message.type)).toEqual(['ready']);
+  readingGesture(); window.scrollTo(0, 800); expect(completions()).toHaveLength(1);
+});
 
 test('replacement freeze blocks trusted reading/link events, preserves the last locator and requires fresh input after recovery', () => {
   run(null); gesture('touchstart', { isTrusted: true }); readingGesture(); window.scrollTo(0, 300);

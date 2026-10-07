@@ -20,6 +20,13 @@ interface ReaderModel {
   readEnd: ReadEndSession | null;
 }
 
+async function saveProgress(current: ReaderModel): Promise<void> {
+  // Settle both independently: failure of Read state cannot discard a locator.
+  const [position, read] = await Promise.allSettled([current.positions.flush(), current.readEnd?.flush()]);
+  if (read.status === 'rejected') throw new Error('Could not save Read state locally. Please retry leaving.');
+  if (position.status === 'rejected') throw new Error('Could not save your position before leaving. Please retry.');
+}
+
 export interface ChapterReaderProps {
   chapterId: string;
   repository: Repository;
@@ -45,7 +52,10 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   const alive = useRef(true);
   const exiting = useRef(false);
   const webFailed = useRef(false);
+  const webTerminated = useRef(false);
   const flushAcknowledgement = useRef<(() => void) | null>(null);
+  const handoffGeneration = useRef(0);
+  const pendingHandoff = useRef<{ id: string; finish(failure?: Error): void } | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -79,6 +89,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       modelRef.current = null;
       flushAcknowledgement.current?.();
       flushAcknowledgement.current = null;
+      pendingHandoff.current?.finish(new Error('Reader closed before handoff.'));
       loaded?.positions.dispose();
       try { if (!retainRenderFiles && loaded?.file.directory.exists) loaded.file.directory.delete(); }
       catch { /* Disposable render files may be left until the next app-data cleanup. */ }
@@ -88,14 +99,8 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   const flushForExit = useCallback(async (): Promise<void> => {
     const current = modelRef.current;
     if (!current) return;
-    const saveProgress = async () => {
-      // Settle both independently: failure of Read state cannot discard a locator.
-      const [position, read] = await Promise.allSettled([current.positions.flush(), current.readEnd?.flush()]);
-      if (read.status === 'rejected') throw new Error('Could not save Read state locally. Please retry leaving.');
-      if (position.status === 'rejected') throw new Error('Could not save your position before leaving. Please retry.');
-    };
     // Persist already received samples even if the WebView is about to suspend.
-    await saveProgress();
+    await saveProgress(current);
     if (web.current && !webFailed.current) {
       await new Promise<void>((resolve) => {
         const timer = setTimeout(() => {
@@ -106,7 +111,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
         web.current?.injectJavaScript('window.StowawayReader && window.StowawayReader.flush(); true;');
       });
     }
-    await saveProgress();
+    await saveProgress(current);
   }, []);
 
   useEffect(() => {
@@ -124,6 +129,30 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     }
   }
 
+  async function quiesce(current: ReaderModel, reopening: boolean): Promise<void> {
+    if (!web.current || webTerminated.current) return;
+    // A load error is not proof of process death. Retry can retain ownership
+    // across a failed rendering; leaving the route still needs a live ack.
+    if (webFailed.current) {
+      if (reopening) return;
+      throw new Error('Could not pause the local reader before leaving. Reopen this chapter and retry.');
+    }
+    const id = `${current.session}:${++handoffGeneration.current}`;
+    await new Promise<void>((resolve, reject) => {
+      const finish = (failure?: Error) => {
+        if (pendingHandoff.current?.id !== id) return;
+        clearTimeout(timer);
+        pendingHandoff.current = null;
+        if (failure) reject(failure); else resolve();
+      };
+      const timer = setTimeout(() => finish(new Error('Could not pause the local reader before leaving. Please retry.')), 600);
+      pendingHandoff.current = { id, finish };
+      try {
+        web.current?.injectJavaScript(`window.StowawayReader && window.StowawayReader.prepareForExit(${JSON.stringify(id)}); true;`);
+      } catch { finish(new Error('Could not pause the local reader before leaving. Please retry.')); }
+    });
+  }
+
   async function replaceReader(replace: (current: ReaderModel | null) => void, reopening: boolean) {
     if (!alive.current || exiting.current) return;
     exiting.current = true;
@@ -132,7 +161,14 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     try {
       // Stop new trusted reading input, but keep accepting already queued messages.
       allowInteraction(false);
-      await flushForExit();
+      if (current) {
+        await saveProgress(current);
+        if (!alive.current || modelRef.current !== current) return;
+        // Only an explicit matching acknowledgement proves a live renderer has
+        // stopped generating input. Background flush timeouts are not a handoff.
+        await quiesce(current, reopening);
+        await saveProgress(current);
+      }
       const handoff = () => {
         if (alive.current && (!current || modelRef.current === current)) replace(modelRef.current);
       };
@@ -160,8 +196,11 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   function onTerminated() {
     if (!alive.current) return;
     webFailed.current = true;
+    webTerminated.current = true;
     setReady(false);
     flushAcknowledgement.current?.();
+    // A definitively terminated renderer needs no acknowledgement or commands.
+    pendingHandoff.current?.finish();
     void reopen();
   }
 
@@ -194,6 +233,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     }
     if (message.type === 'layout-start') setReady(false);
     if (message.type === 'flushed') flushAcknowledgement.current?.();
+    if (message.type === 'quiesced' && pendingHandoff.current?.id === message.handoffId) pendingHandoff.current.finish();
     if (message.type === 'link') {
       const url = current.chapter.links[message.linkId];
       if (url) void Linking.openURL(url).catch(() => setError('Could not open the link in your browser.'));

@@ -149,6 +149,14 @@ export const POSITION_BRIDGE = String.raw`
   window.addEventListener('pagehide', function () { flush('flush'); });
   window.StowawayReader = Object.freeze({
     setInteractionEnabled: function (enabled) { interactionEnabled = enabled === true; invalidateGesture(); },
+    prepareForExit: function (handoffId) {
+      if (typeof handoffId !== 'string' || !/^[A-Za-z0-9:-]{1,100}$/.test(handoffId)) return;
+      interactionEnabled = false;
+      invalidateGesture();
+      flush('flush');
+      // Earlier messages and this acknowledgement use the same ordered bridge.
+      send({ type: 'quiesced', handoffId: handoffId });
+    },
     flush: function () { flush('flush'); send({ type: 'flushed' }); },
     restyle: function (fontSize, theme) {
       if (!ready || !Number.isFinite(fontSize) || fontSize < 14 || fontSize > 32 ||

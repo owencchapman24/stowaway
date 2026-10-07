@@ -2,6 +2,7 @@ import type { Chapter, Locator } from '../domain/types';
 
 export type ReaderMessage =
   | { type: 'ready' | 'layout-start' | 'flushed' | 'read-end'; session: string; chapterId: string; contentHash: string }
+  | { type: 'quiesced'; session: string; chapterId: string; contentHash: string; handoffId: string }
   | { type: 'link'; session: string; chapterId: string; contentHash: string; linkId: string }
   | { type: 'position'; session: string; chapterId: string; contentHash: string; locator: Locator; reason: 'scroll' | 'flush' };
 
@@ -13,6 +14,10 @@ export function parseMessage(raw: string, chapter: Chapter, session: string): Re
       message.chapterId !== chapter.id || message.contentHash !== chapter.contentHash) return null;
     if (message.type === 'ready' || message.type === 'layout-start' || message.type === 'flushed' || message.type === 'read-end') {
       return Object.keys(message).length === 4 ? message : null;
+    }
+    if (message.type === 'quiesced') {
+      return Object.keys(message).length === 5 && typeof message.handoffId === 'string' &&
+        /^[A-Za-z0-9:-]{1,100}$/.test(message.handoffId) ? message : null;
     }
     if (message.type === 'link') {
       return typeof message.linkId === 'string' && Object.hasOwn(chapter.links, message.linkId) ? message : null;
