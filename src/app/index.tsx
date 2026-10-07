@@ -29,9 +29,10 @@ export default function Library() {
         onPress={() => router.push({ pathname: '/story', params: { story: item.id } })} />
       <Text>{item.author ?? 'Author unavailable'}</Text>
       <Text>{item.downloaded} / {item.total} text chapters downloaded</Text>
+      <Text>{item.unread} unread</Text>
       {item.downloaded < item.total && <Text>Pending chapters — open contents to resume download.</Text>}
     </View>} ListFooterComponent={<View style={styles.section}>
-      <Text>Downloaded text and reading positions stay on this device.</Text>
+      <Text>Downloaded text, read state and reading positions stay on this device.</Text>
       {__DEV__ && <><Text accessibilityRole="header">Development diagnostics</Text>
         <Control label="Open S1 development diagnostic" text="S1 diagnostic (dev only)" onPress={() => router.push('/s1')} />
         <Control label="Open S2A recovery diagnostic" text="S2A recovery diagnostic (dev only)" onPress={() => router.push('/s2a')} /></>}

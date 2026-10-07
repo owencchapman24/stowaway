@@ -42,6 +42,7 @@ export interface StoryMetadata {
 export interface StorySummary extends StoryMetadata {
   total: number;
   downloaded: number;
+  unread: number;
   lastUpdateAttemptAt: number | null;
   lastUpdateSuccessAt: number | null;
 }
@@ -49,6 +50,7 @@ export interface StoryContentsEntry extends ChapterSummary {
   postId: string;
   sourceUrl: string;
   downloaded: boolean;
+  isRead: boolean;
 }
 
 export interface ReconciliationResult {

@@ -3,6 +3,7 @@ import { ChapterReader } from '../src/reader/ChapterReader';
 import type { Repository } from '../src/storage/repository';
 import type { Chapter } from '../src/domain/types';
 import { createRenderFile } from '../src/storage/files';
+import * as Crypto from 'expo-crypto';
 
 jest.mock('expo-router', () => ({ Stack: { Screen: () => null } }));
 jest.mock('../src/storage/files', () => ({ createRenderFile: jest.fn() }));
@@ -16,6 +17,7 @@ const chapter: Chapter = { id: 'spacebattles:thread:9001:post:101', storyId: 'sp
 const repo = { getChapter: jest.fn(), getLocator: jest.fn(), listChapters: jest.fn(), getChapterAssetPath: jest.fn(), listChapterImages: jest.fn(), saveLocator: jest.fn() };
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.spyOn(Crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
   repo.getChapter.mockResolvedValue(chapter); repo.getLocator.mockResolvedValue(null);
   repo.listChapters.mockImplementation(async (story) => story === chapter.storyId ? [chapter] : [chapter, { id: 'fixture:thread:1001:post:2001' }]);
   repo.getChapterAssetPath.mockResolvedValue(null);

@@ -67,7 +67,7 @@ test('actual v1 migration preserves fixture bodies/IDs, locator, settings and as
   expect(await repo.listStories()).toMatchObject([{ id: fixture.id, total: 3, downloaded: 3 }]);
   expect((await repo.listContents(fixture.id)).map((e) => e.title)).toContain('Renamed old chapter');
   expect(await host.db.getAllAsync('PRAGMA foreign_key_check')).toEqual([]);
-  await host.db.execAsync('PRAGMA user_version = 5');
+  await host.db.execAsync('PRAGMA user_version = 6');
   await expect(migrate(host.db)).rejects.toThrow('newer');
   expect(await host.db.getAllAsync('SELECT * FROM chapters ORDER BY id')).toEqual(bodies);
 });

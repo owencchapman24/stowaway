@@ -49,35 +49,61 @@ export type WriteBoundary = (phase: 'before-write' | 'after-html-write' | 'befor
 
 export function createRepository(db: SqlDatabase) {
   const write = serializeWrites(db);
-  const storySelect = `SELECT s.id, s.source, s.thread_id AS threadId, s.title,
+  // Historical migration checks can still inspect v3/v4. No completion history
+  // exists there; normal startup migrates to v5 before exposing read-state writes.
+  async function readColumn() {
+    const version = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+    return (version?.user_version ?? 0) >= 5 ? 'e.is_read' : '0';
+  }
+  const storySelect = (read: string) => `SELECT s.id, s.source, s.thread_id AS threadId, s.title,
     NULLIF(s.author, '') AS author, s.source_url AS sourceUrl, s.primary_category_id AS categoryId,
     s.last_update_attempt_at AS lastUpdateAttemptAt, s.last_update_success_at AS lastUpdateSuccessAt,
-    COUNT(e.post_id) AS total, COUNT(c.id) AS downloaded FROM stories s
+    COUNT(e.post_id) AS total, COUNT(c.id) AS downloaded,
+    COALESCE(SUM(e.post_id IS NOT NULL AND ${read} = 0), 0) AS unread FROM stories s
     LEFT JOIN threadmark_entries e ON e.story_id = s.id AND e.currently_listed = 1
     LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id`;
   return {
     ...createImageRepository(db, write),
     async listStories(): Promise<StorySummary[]> {
-      return db.getAllAsync(`${storySelect} GROUP BY s.id ORDER BY s.title, s.id`);
+      return db.getAllAsync(`${storySelect(await readColumn())} GROUP BY s.id ORDER BY s.title, s.id`);
     },
     async getStory(id: string): Promise<StorySummary | null> {
-      return db.getFirstAsync(`${storySelect} WHERE s.id = ? GROUP BY s.id`, id);
+      return db.getFirstAsync(`${storySelect(await readColumn())} WHERE s.id = ? GROUP BY s.id`, id);
     },
     async listContents(id: string): Promise<StoryContentsEntry[]> {
-      const rows = await db.getAllAsync<Omit<StoryContentsEntry, 'downloaded'> & { downloaded: number }>(
+      const rows = await db.getAllAsync<Omit<StoryContentsEntry, 'downloaded' | 'isRead'> & { downloaded: number; isRead: number }>(
         `SELECT s.id || ':post:' || e.post_id AS id, e.post_id AS postId, e.title, e.position,
-          e.source_url AS sourceUrl, c.id IS NOT NULL AS downloaded
+          e.source_url AS sourceUrl, c.id IS NOT NULL AS downloaded, ${await readColumn()} AS isRead
          FROM threadmark_entries e JOIN stories s ON s.id = e.story_id
          LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id
          WHERE e.story_id = ? AND e.currently_listed = 1 ORDER BY e.position`, id);
-      return rows.map((row) => ({ ...row, downloaded: Boolean(row.downloaded) }));
+      return rows.map((row) => ({ ...row, downloaded: Boolean(row.downloaded), isRead: Boolean(row.isRead) }));
     },
     async listSavedUnlisted(id: string): Promise<StoryContentsEntry[]> {
-      const rows = await db.getAllAsync<Omit<StoryContentsEntry, 'downloaded'>>(
-        `SELECT c.id, e.post_id AS postId, e.title, e.position, e.source_url AS sourceUrl
+      const rows = await db.getAllAsync<Omit<StoryContentsEntry, 'downloaded' | 'isRead'> & { isRead: number }>(
+        `SELECT c.id, e.post_id AS postId, e.title, e.position, e.source_url AS sourceUrl, ${await readColumn()} AS isRead
          FROM threadmark_entries e JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id
          WHERE e.story_id = ? AND e.currently_listed = 0 ORDER BY e.position, e.post_id`, id);
-      return rows.map((row) => ({ ...row, downloaded: true }));
+      return rows.map((row) => ({ ...row, downloaded: true, isRead: Boolean(row.isRead) }));
+    },
+    async setEntryRead(story: string, postId: string, isRead: boolean): Promise<void> {
+      if (typeof isRead !== 'boolean') throw new Error('Invalid read state.');
+      await write(async (tx) => {
+        if (!await tx.getFirstAsync('SELECT post_id FROM threadmark_entries WHERE story_id = ? AND post_id = ?', story, postId)) {
+          throw new Error('Read state requires a stored manifest entry.');
+        }
+        await tx.runAsync('UPDATE threadmark_entries SET is_read = ? WHERE story_id = ? AND post_id = ? AND is_read != ?',
+          Number(isRead), story, postId, Number(isRead));
+      });
+    },
+    async markChapterRead(id: string): Promise<void> {
+      await write(async (tx) => {
+        const entry = await tx.getFirstAsync<{ story_id: string; post_id: string }>(`SELECT e.story_id, e.post_id
+          FROM chapters c JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id WHERE c.id = ?`, id);
+        if (!entry) throw new Error('Read state requires a downloaded chapter with a stored manifest entry.');
+        await tx.runAsync('UPDATE threadmark_entries SET is_read = 1 WHERE story_id = ? AND post_id = ? AND is_read = 0',
+          entry.story_id, entry.post_id);
+      });
     },
     async recordUpdateAttempt(id: string, at: number, signal?: AbortSignal): Promise<void> {
       const checkCancelled = () => { if (signal?.aborted) throw new Error('Update attempt cancelled.'); };

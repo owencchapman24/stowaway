@@ -3,10 +3,13 @@ export const POSITION_BRIDGE = String.raw`
 (function () {
   'use strict';
   let ready = false;
+  let interactionEnabled = true;
   let engaged = false;
   let dirty = false;
   let timer = null;
   let epoch = 0;
+  let readEndSent = false;
+  let readingGesture = null;
   const root = document.getElementById('chapter');
   function send(message) {
     window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({
@@ -14,6 +17,34 @@ export const POSITION_BRIDGE = String.raw`
     }, message)));
   }
   function maxScroll() { return Math.max(0, document.documentElement.scrollHeight - window.innerHeight); }
+  // Completion is a live-layout observation, never a locator/progression guess.
+  // A scroll needs a recent trusted scrolling input with unchanged geometry.
+  function readEnd() {
+    if (!ready || !interactionEnabled || readEndSent || maxScroll() - window.scrollY > 24) return;
+    readEndSent = true;
+    readingGesture = null;
+    send({ type: 'read-end' });
+  }
+  function invalidateGesture() { readingGesture = null; }
+  function readingInput(event) {
+    if (!ready || !interactionEnabled || !event.isTrusted || readEndSent || !root.contains(event.target)) return;
+    const element = event.target instanceof Element ? event.target : event.target.parentElement;
+    // Following links and changing spoiler geometry are separate deliberate actions.
+    if (element && element.closest('a, summary')) { invalidateGesture(); return; }
+    if (event.type === 'keydown' && !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'End', 'Home', ' '].includes(event.key)) return;
+    if (['touchmove', 'wheel', 'keydown'].includes(event.type)) {
+      readingGesture = { height: document.documentElement.scrollHeight, viewport: window.innerHeight,
+        expires: performance.now() + 1200 };
+    }
+    readEnd();
+  }
+  function readingScroll() {
+    if (!readingGesture || performance.now() > readingGesture.expires ||
+      readingGesture.height !== document.documentElement.scrollHeight || readingGesture.viewport !== window.innerHeight) {
+      invalidateGesture(); return;
+    }
+    readEnd();
+  }
   function snapshot() {
     const visible = Array.from(root.querySelectorAll('[data-block]')).filter(function (element) {
       return element.getClientRects().length && element.getBoundingClientRect().height > 0;
@@ -45,7 +76,7 @@ export const POSITION_BRIDGE = String.raw`
     dirty = false;
   }
   function mark() {
-    if (!ready || !engaged) return;
+    if (!ready || !interactionEnabled || !engaged) return;
     dirty = true;
     if (timer) clearTimeout(timer);
     timer = setTimeout(function () { flush('scroll'); }, 150);
@@ -79,6 +110,7 @@ export const POSITION_BRIDGE = String.raw`
     ready = false;
     engaged = false;
     dirty = false;
+    invalidateGesture();
     restore(locator);
     requestAnimationFrame(function () {
       restore(locator);
@@ -92,17 +124,22 @@ export const POSITION_BRIDGE = String.raw`
       });
     });
   }
-  function engage(event) { if (ready && event.isTrusted) engaged = true; }
+  function engage(event) { if (ready && interactionEnabled && event.isTrusted) engaged = true; }
   ['touchstart', 'pointerdown', 'wheel', 'keydown'].forEach(function (type) {
     document.addEventListener(type, engage, { passive: true });
   });
+  ['touchmove', 'touchend', 'wheel', 'keydown', 'click'].forEach(function (type) {
+    document.addEventListener(type, readingInput, { passive: true });
+  });
   window.addEventListener('scroll', mark, { passive: true });
+  window.addEventListener('scroll', readingScroll, { passive: true });
+  window.addEventListener('resize', invalidateGesture, { passive: true });
   document.addEventListener('click', function (event) {
     const element = event.target instanceof Element ? event.target : event.target.parentElement;
     const anchor = element && element.closest('a');
     if (anchor) {
       event.preventDefault();
-      if (ready && event.isTrusted && anchor.dataset.link) send({ type: 'link', linkId: anchor.dataset.link });
+      if (ready && interactionEnabled && event.isTrusted && anchor.dataset.link) send({ type: 'link', linkId: anchor.dataset.link });
       return;
     }
     engage(event);
@@ -111,6 +148,15 @@ export const POSITION_BRIDGE = String.raw`
   document.addEventListener('visibilitychange', function () { if (document.hidden) flush('flush'); });
   window.addEventListener('pagehide', function () { flush('flush'); });
   window.StowawayReader = Object.freeze({
+    setInteractionEnabled: function (enabled) { interactionEnabled = enabled === true; invalidateGesture(); },
+    prepareForExit: function (handoffId) {
+      if (typeof handoffId !== 'string' || !/^[A-Za-z0-9:-]{1,100}$/.test(handoffId)) return;
+      interactionEnabled = false;
+      invalidateGesture();
+      flush('flush');
+      // Earlier messages and this acknowledgement use the same ordered bridge.
+      send({ type: 'quiesced', handoffId: handoffId });
+    },
     flush: function () { flush('flush'); send({ type: 'flushed' }); },
     restyle: function (fontSize, theme) {
       if (!ready || !Number.isFinite(fontSize) || fontSize < 14 || fontSize > 32 ||
@@ -130,7 +176,10 @@ export const POSITION_BRIDGE = String.raw`
     text.textContent = '[Local image unavailable: ' + image.alt + ']';
     image.replaceWith(text);
   }
-  images.forEach(function (image) { image.addEventListener('error', function () { placeholder(image); }); });
+  images.forEach(function (image) {
+    image.addEventListener('load', invalidateGesture);
+    image.addEventListener('error', function () { invalidateGesture(); placeholder(image); });
+  });
   function start() {
     images.forEach(function (image) { if (image.complete && !image.naturalWidth) placeholder(image); });
     settle(CONFIG.locator);

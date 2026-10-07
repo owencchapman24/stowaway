@@ -32,10 +32,10 @@ jest.mock('../src/importing/native', () => ({ updateNativeStory: jest.fn() }));
 jest.mock('../src/images/native', () => ({ downloadNativeImages: jest.fn() }));
 const story: StorySummary = { id: 'spacebattles:thread:9001', source: 'spacebattles', threadId: '9001',
   title: 'Generated story A', author: null, sourceUrl: 'https://forums.spacebattles.com/threads/9001/', categoryId: '9',
-  total: 2, downloaded: 2, lastUpdateAttemptAt: null, lastUpdateSuccessAt: null };
+  total: 2, downloaded: 2, unread: 2, lastUpdateAttemptAt: null, lastUpdateSuccessAt: null };
 const other = { ...story, id: 'spacebattles:thread:9002', threadId: '9002', title: 'Generated story B', sourceUrl: 'https://forums.spacebattles.com/threads/9002/' };
 const entry = (post: string, name: string, downloaded = true): StoryContentsEntry => ({ id: `${story.id}:post:${post}`,
-  postId: post, title: name, position: 0, sourceUrl: story.sourceUrl + `#post-${post}`, downloaded });
+  postId: post, title: name, position: 0, sourceUrl: story.sourceUrl + `#post-${post}`, downloaded, isRead: false });
 const repository = { getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn(), getImageSummary: jest.fn() };
 const run = jest.mocked(updateNativeStory);
 const imageRun = jest.mocked(downloadNativeImages);

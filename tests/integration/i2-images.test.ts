@@ -79,7 +79,7 @@ test.each([0, 1, 2, 3])('fresh/v%s migrates to latest non-destructively; S2A v1 
     bodies: await host.db.getAllAsync('SELECT id, story_id, post_id, title, position, html, content_hash, sanitizer_version, block_ids, links FROM chapters ORDER BY id'),
     positions: await host.db.getAllAsync('SELECT * FROM reading_positions'), settings: await host.db.getAllAsync('SELECT * FROM settings'), assets: await host.db.getAllAsync('SELECT * FROM assets') } : null;
   await migrate(host.db); await migrate(host.db);
-  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 4 });
+  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 5 });
   if (before) {
     expect(await host.db.getAllAsync('SELECT id, source, thread_id, title, author FROM stories ORDER BY id')).toEqual(before.stories);
     expect(await host.db.getAllAsync('SELECT id, story_id, post_id, title, position, html, content_hash, sanitizer_version, block_ids, links FROM chapters ORDER BY id')).toEqual(before.bodies);
@@ -98,9 +98,9 @@ test('populated v3 -> v4 preserves current/unlisted entries, timestamps, entire 
   const snapshot = async () => ({ stories: await host.db.getAllAsync('SELECT * FROM stories ORDER BY id'), entries: await host.db.getAllAsync('SELECT * FROM threadmark_entries ORDER BY story_id, post_id'),
     chapters: await host.db.getAllAsync('SELECT id, story_id, post_id, title, position, html, content_hash, sanitizer_version, block_ids, links FROM chapters ORDER BY id'),
     locators: await host.db.getAllAsync('SELECT * FROM reading_positions'), settings: await host.db.getAllAsync('SELECT * FROM settings'), assets: await host.db.getAllAsync('SELECT * FROM assets') });
-  const before = await snapshot(); host.failNextCommit(); await expect(migrate(host.db)).rejects.toThrow('commit failure');
+  const before = await snapshot(); host.failNextCommit(); await expect(migrate(host.db, 4)).rejects.toThrow('commit failure');
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 }); expect(await snapshot()).toEqual(before);
-  await migrate(host.db); expect(await snapshot()).toEqual(before);
+  await migrate(host.db, 4); expect(await snapshot()).toEqual(before);
   expect(await host.db.getAllAsync('SELECT id, image_discovery FROM chapters ORDER BY id')).toEqual([
     ...fixture.chapters.map((chapter) => ({ id: chapter.id, image_discovery: 'fixture' })), { id: chapterId, image_discovery: 'unknown' },
   ].sort((a, b) => a.id.localeCompare(b.id)));
@@ -226,7 +226,7 @@ test('stored 58-slot/8-MIME-omission library retries only those slots, preserves
   const after = await repo.listChapterImages(chapterId); expect(after).toHaveLength(58); expect(after.slice(0, 50)).toEqual(slots.slice(0, 50));
   expect(after.map(({ slot, blockId, sourceUrl }) => ({ slot, blockId, sourceUrl }))).toEqual(slots.map(({ slot, blockId, sourceUrl }) => ({ slot, blockId, sourceUrl })));
   expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
-  expect(await repo.getStory(id)).toMatchObject({ downloaded: 1, total: 1 }); expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 4 });
+  expect(await repo.getStory(id)).toMatchObject({ downloaded: 1, total: 1 }); expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 5 });
   expect(result.mimeDiagnostics).toHaveLength(8);
   const retry = source(); await run(retry); expect(retry.calls).toEqual([]);
 });
