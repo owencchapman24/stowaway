@@ -5,6 +5,8 @@ import { prepareContent } from '../content/sanitize';
 import { fixtureStory } from '../fixtures/story';
 import { type SqlDatabase, serializeWrites } from './database';
 import { documentUrl, threadFromUrl } from '../sources/spacebattles/url';
+import { createImageRepository, insertImageSlots } from '../images/repository';
+import type { ImageSlot } from '../images/types';
 
 interface CompleteManifest {
   state: 'COMPLETE'; entries: { postId: string; title: string; url: string }[];
@@ -54,6 +56,7 @@ export function createRepository(db: SqlDatabase) {
     LEFT JOIN threadmark_entries e ON e.story_id = s.id AND e.currently_listed = 1
     LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id`;
   return {
+    ...createImageRepository(db, write),
     async listStories(): Promise<StorySummary[]> {
       return db.getAllAsync(`${storySelect} GROUP BY s.id ORDER BY s.title, s.id`);
     },
@@ -158,18 +161,20 @@ export function createRepository(db: SqlDatabase) {
     },
     async commitDownloadedChapter(story: string, postId: string,
       content: Pick<Chapter, 'html' | 'contentHash' | 'sanitizerVersion' | 'blockIds' | 'links'>,
-      signal?: AbortSignal): Promise<void> {
+      signal?: AbortSignal, images?: ImageSlot[]): Promise<void> {
       const checkCancelled = () => { if (signal?.aborted) throw new Error('Chapter commit cancelled.'); };
       await write(async (tx) => {
         checkCancelled();
         const entry = await tx.getFirstAsync<{ title: string; position: number }>(
           'SELECT title, position FROM threadmark_entries WHERE story_id = ? AND post_id = ? AND currently_listed = 1', story, postId);
         if (!entry) throw new Error('Chapter has no committed manifest entry.');
+        if (await tx.getFirstAsync('SELECT id FROM chapters WHERE id = ?', chapterId(story, postId))) return;
         checkCancelled();
         await tx.runAsync(`INSERT INTO chapters(id, story_id, post_id, title, position, html,
           content_hash, sanitizer_version, block_ids, links) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT DO NOTHING`, chapterId(story, postId), story, postId, entry.title, entry.position,
           content.html, content.contentHash, content.sanitizerVersion, JSON.stringify(content.blockIds), JSON.stringify(content.links));
+        if (images) await insertImageSlots(tx, chapterId(story, postId), content, images, signal);
         checkCancelled();
       }, checkCancelled);
     },
@@ -206,6 +211,7 @@ export function createRepository(db: SqlDatabase) {
           chapter.contentHash, chapter.sanitizerVersion, JSON.stringify(chapter.blockIds), JSON.stringify(chapter.links));
         }
         const version = await tx.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+        if ((version?.user_version ?? 0) >= 4) await tx.runAsync("UPDATE chapters SET image_discovery = 'fixture' WHERE story_id = ?", fixture.id);
         if ((version?.user_version ?? 0) >= 2) {
           for (const chapter of fixture.chapters) await tx.runAsync(`INSERT INTO threadmark_entries(
             story_id, post_id, title, position, source_url) VALUES (?, ?, ?, ?, '') ON CONFLICT DO NOTHING`,

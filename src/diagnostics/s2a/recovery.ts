@@ -4,7 +4,8 @@ import type { Chapter, Locator } from '../../domain/types';
 import type { SqlDatabase } from '../../storage/database';
 import { migrate } from '../../storage/migrations';
 import { compileFixture, createRepository, type Repository, type WriteBoundary } from '../../storage/repository';
-import { assetPath, createLocalContentFiles, UUID, type LocalFiles } from '../../storage/local-files';
+import { assetPath, createLocalContentFiles } from '../../storage/local-files';
+import { UUID, type LocalFiles } from '../../storage/file-primitives';
 import { assertS2AResources, removeS2AOrphans, removeS2ARenders } from './isolation';
 
 export interface S2ADependencies {

@@ -3,16 +3,17 @@ import { DomUtils, parseDocument } from 'htmlparser2';
 import type { ReconciliationResult, StoryMetadata, StorySummary } from '../domain/types';
 import type { Repository } from '../storage/repository';
 import { discoverManifest } from '../sources/spacebattles/diagnostic';
-import { extractPostBody, parseStoryMetadata } from '../sources/spacebattles/parse';
+import { extractPostContent, parseStoryMetadata } from '../sources/spacebattles/parse';
 import type { RequestClient } from '../sources/spacebattles/request';
 import { S1Failure, type Document } from '../sources/spacebattles/types';
 import { documentUrl, threadFromUrl } from '../sources/spacebattles/url';
 
-export class ImportFailure extends Error {
-  constructor(readonly code: 'storage' | 'busy', message: string) { super(message); this.name = 'ImportFailure'; }
-}
+import { acquireStory, ImportFailure } from './ownership';
+import { downloadChapterImages } from '../images/download';
+import type { SourceImageFiles } from '../images/files';
+export { ImportFailure } from './ownership';
 export interface ImportProgress {
-  phase: 'validating' | 'manifest' | 'saving' | 'reconciling' | 'downloading' | 'completed' | 'cancelled' | 'failed';
+  phase: 'validating' | 'manifest' | 'saving' | 'reconciling' | 'downloading' | 'images' | 'completed' | 'cancelled' | 'failed';
   storyId?: string;
   downloaded: number;
   total: number;
@@ -29,9 +30,8 @@ export interface UpdateResult extends ImportResult {
 interface OperationOptions {
   signal?: AbortSignal; onProgress?: (progress: ImportProgress) => void;
   now?: () => number;
+  imageFiles?: SourceImageFiles;
 }
-// Module-scoped ownership spans screens, repository handles and import/update/resume callers.
-const activeStories = new Set<string>();
 export async function importStory(value: string, repository: Repository, client: RequestClient,
   digest: (value: string) => Promise<string>, options: OperationOptions = {}): Promise<ImportResult> {
   return operateStory(value, repository, client, digest, options, false);
@@ -43,7 +43,7 @@ export async function updateStory(story: Pick<StoryMetadata, 'id' | 'sourceUrl'>
 async function operateStory(value: string, repository: Repository, client: RequestClient,
   digest: (value: string) => Promise<string>, options: OperationOptions, updating: boolean, expectedId?: string): Promise<UpdateResult> {
   let id: string | undefined = expectedId;
-  let ownsLock = false;
+  let release: (() => void) | null = null;
   let downloaded = 0;
   let total = 0;
   let reconciliation: ReconciliationResult | null = null;
@@ -64,8 +64,7 @@ async function operateStory(value: string, repository: Repository, client: Reque
     const thread = threadFromUrl(value);
     if (updating && thread.storyId !== expectedId) throw new S1Failure('unsupported-url', 'Stored source URL does not match this story identity.');
     id = thread.storyId;
-    if (activeStories.has(id)) throw new ImportFailure('busy', 'This story already has an import, update or download running.');
-    activeStories.add(id); ownsLock = true;
+    release = acquireStory(id);
     const get = async (url: string): Promise<Document> => {
       cancelled();
       const key = documentUrl(url, thread.threadId);
@@ -110,17 +109,22 @@ async function operateStory(value: string, repository: Repository, client: Reque
       progress('downloading', entry.title);
       const page = await get(entry.sourceUrl);
       let content;
+      let images;
       try {
-        const raw = extractPostBody(page, thread, { postId: entry.postId, chapterId: entry.id,
+        const extracted = extractPostContent(page, thread, { postId: entry.postId, chapterId: entry.id,
           title: entry.title, url: entry.sourceUrl, threadmarkId: null }, story.categoryId);
-        content = await prepareContent(raw, digest);
+        content = await prepareContent(extracted.sourceHtml, digest); images = extracted.images;
         if (!content.blockIds.length || !DomUtils.textContent(parseDocument(content.html)).trim()) throw new Error('Empty sanitized chapter.');
       } catch (error) {
         throw error instanceof S1Failure ? error : new S1Failure('parser', 'Chapter extraction or sanitization failed.');
       }
       cancelled();
-      await storage(() => repository.commitDownloadedChapter(thread.storyId, entry.postId, content, options.signal));
+      await storage(() => repository.commitDownloadedChapter(thread.storyId, entry.postId, content, options.signal, images));
       bodiesDownloaded++; downloaded++; progress('downloading', entry.title);
+      if (options.imageFiles) {
+        await downloadChapterImages(thread.storyId, entry.id, repository, client, options.imageFiles,
+          { signal: options.signal, onProgress: () => progress('images', entry.title) });
+      }
     }
     cached = null; cancelled(); progress('completed');
     return { story: await storage(() => repository.getStory(thread.storyId)), failure: null, reconciliation, bodiesDownloaded };
@@ -134,6 +138,6 @@ async function operateStory(value: string, repository: Repository, client: Reque
     return { story, failure, reconciliation, bodiesDownloaded };
   } finally {
     cached = null;
-    if (id && ownsLock) activeStories.delete(id);
+    release?.();
   }
 }

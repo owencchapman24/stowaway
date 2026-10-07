@@ -41,7 +41,7 @@ export function safeLink(value: string): string | null {
 }
 
 /** No source attribute survives except explicitly validated link/image values. */
-export function sanitize(source: string): SanitizedContent {
+export function sanitize(source: string, onImage?: (blockId: string, attributes: Readonly<Record<string, string>>) => void): SanitizedContent {
   if (source.length > 1_000_000) throw new Error('Fixture exceeds content budget.');
   const blockIds: string[] = [];
   const links: Record<string, string> = {};
@@ -70,6 +70,7 @@ export function sanitize(source: string): SanitizedContent {
       attributes += ` href="${escapeHtml(href)}" data-link="${id}" rel="noreferrer noopener"`;
     }
     if (tag === 'img') {
+      onImage?.(blockIds[blockIds.length - 1]!, element.attribs);
       if (element.attribs.src !== 'fixture://harbor.png') {
         return `<p${attributes}>[Image omitted: external or unsupported asset]</p>`;
       }

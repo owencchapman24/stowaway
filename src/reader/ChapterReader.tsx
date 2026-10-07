@@ -46,11 +46,11 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     let loaded: ReaderModel | null = null;
     repository.getChapter(chapterId).then(async (chapter) => {
       if (!chapter) throw new Error('Chapter is not downloaded.');
-      const [locator, list, assetPath] = await Promise.all([repository.getLocator(chapterId),
-        repository.listChapters(chapter.storyId), repository.getChapterAssetPath(chapterId)]);
+      const [locator, list, assetPath, images] = await Promise.all([repository.getLocator(chapterId),
+        repository.listChapters(chapter.storyId), repository.getChapterAssetPath(chapterId), repository.listChapterImages(chapterId)]);
       if (!active) return;
       const session = Crypto.randomUUID();
-      const file = await renderFile(chapter, locator, preferencesRef.current, session, assetPath);
+      const file = await renderFile(chapter, locator, preferencesRef.current, session, assetPath, undefined, images);
       const positions = new PositionSession(repository.saveLocator, () => {
         if (active) setError('Could not save the latest position. The previous saved passage is retained.');
       });

@@ -1,4 +1,5 @@
-import { UUID, assetPath, type LocalFiles } from '../../storage/local-files';
+import { assetPath } from '../../storage/local-files';
+import { UUID, type LocalFiles } from '../../storage/file-primitives';
 
 export const S2A_DATABASE = 'stowaway-s2a.db';
 export const S2A_DIRECTORY = 'stowaway-s2a';

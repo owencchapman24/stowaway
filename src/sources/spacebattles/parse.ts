@@ -5,6 +5,9 @@ import { accessFailure } from './request';
 import { documentUrl, postIdFromLink } from './url';
 import { S1Failure, type Category, type Document, type Entry, type Sample, type Thread } from './types';
 import type { StoryMetadata } from '../../domain/types';
+import { sanitize } from '../../content/sanitize';
+import { classifyImageUrl } from '../../images/source-url';
+import type { ImageSlot } from '../../images/types';
 
 function elements(node: { children?: ChildNode[] }): Element[] {
   const list: Element[] = [];
@@ -201,9 +204,23 @@ export function parseStoryMetadata(page: Document, thread: Thread): Omit<StoryMe
 
 /** Transient extraction only. The caller must sanitize before persisting. */
 export function extractPostBody(page: Document, thread: Thread, entry: Entry, categoryId: string): string {
+  return extractPostContent(page, thread, entry, categoryId).sourceHtml;
+}
+
+export function extractPostContent(page: Document, thread: Thread, entry: Entry, categoryId: string): { sourceHtml: string; images: ImageSlot[] } {
   const prose = selectedBody(page, thread, entry, categoryId);
+  const descriptors = new Map<string, Omit<ImageSlot, 'slot' | 'blockId'>>();
   for (const node of elements(prose)) {
-    if (node.name === 'img') node.attribs.src = ''; // Even a source-supplied fixture URL is not a bundled asset.
+    if (node.name === 'img') {
+      if (descriptors.size >= 3000) throw new S1Failure('parser', 'Image slot budget exceeded.');
+      const key = String(descriptors.size);
+      const value = node.attribs['data-src'] || node.attribs['data-url'] || node.attribs.src || '';
+      const { sourceUrl, reason } = classifyImageUrl(value, page.url);
+      descriptors.set(key, { sourceUrl, reason, state: reason ? 'omitted' : 'pending',
+        alt: (node.attribs.alt ?? '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200) });
+      node.attribs['data-stowaway-image'] = key;
+      node.attribs.src = ''; // A source cannot impersonate the fixture; no remote src survives.
+    }
     if (node.name === 'a' && node.attribs.href) {
       try { node.attribs.href = new URL(node.attribs.href, page.url).href; } catch { delete node.attribs.href; }
     }
@@ -234,5 +251,14 @@ export function extractPostBody(page: Document, thread: Thread, entry: Entry, ca
     } else run.push(node);
   }
   flush();
-  return `<div>${html}</div>`;
+  const sourceHtml = `<div>${html}</div>`;
+  const images: ImageSlot[] = [];
+  // Observe the actual allowlist traversal, so discarded containers/spoiler chrome
+  // never shift source descriptors relative to canonical placeholder blocks.
+  sanitize(sourceHtml, (blockId, attributes) => {
+    const descriptor = descriptors.get(attributes['data-stowaway-image'] ?? '');
+    if (!descriptor) throw new S1Failure('parser', 'Image slot mapping failed.');
+    images.push({ ...descriptor, slot: images.length, blockId });
+  });
+  return { sourceHtml, images };
 }
