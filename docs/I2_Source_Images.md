@@ -1,6 +1,72 @@
 # I2 source images and offline asset persistence
 
-Implementation candidate: **6 October 2026, America/New_York**, branch `feat/source-images`, base merged main **bba2c01** (PR #5/I1). **I2 is not physically accepted.** Owen must report the [device checklist](I2_Device_Checklist.md) before PR creation. S0/S1/S2A/I0/I1 remain accepted; I0/I1 are merged in PR #4/#5. S2B remains deferred and full v0 is incomplete. No prior physical image support is inferred from historical I0/I1 records.
+Implementation date: **6 October 2026, America/New_York**, branch `feat/source-images`, base merged main **bba2c01** (PR #5/I1). **CORE I2 PHYSICAL ACCEPTANCE PASSED**, recorded from Owen's supplied physical-iPhone report after implementation/fix **fcd53badc5cf508e3adcca19832f04ffdf8a9caf**, through the existing Expo Go/Metro library. Real same-origin SpaceBattles images were downloaded, validated, persisted, rendered locally and regenerated while network-disabled on the already-running project. Conditional cancellation/destructive/rare live cases remain physically unexercised and retain deterministic/separate S2A evidence. This is Owen's reported evidence, not an agent-operated phone run or independent device/wire inspection. See the [reported device checklist](I2_Device_Checklist.md).
+
+S0/S1/S2A/I0/I1 remain accepted; I0/I1 are merged in PR #4/#5. **S2B remains deferred; full v0 is incomplete.** No historical I0/I1 record is rewritten as image acceptance. Current authorization is acceptance bookkeeping, validation, a separate commit/push and PR preparation against main; no merge or next product slice is authorized.
+
+## Implementation and maintenance history
+
+| Commit | Change |
+| --- | --- |
+| `2ed0bbf5cc1428255d352fbc1505119d972bcb56` | Implement I2 offline source images |
+| `5d5bd28c447953252075edb569852e813dbb0e72` | Remove I2 filesystem require cycle |
+| `d41765a1c4f57e852bdd8446993d46df5fb91ecd` | Update Expo SDK 57 patch dependencies |
+| `fcd53badc5cf508e3adcca19832f04ffdf8a9caf` | Fix I2 SpaceBattles image MIME compatibility |
+
+Physical acceptance initially surfaced the Metro warning `src/images/files.ts -> src/storage/local-files.ts -> src/images/files.ts`. Shared `LocalFiles`, UUID and neutral path/file primitives moved to `src/storage/file-primitives.ts` in **5d5bd28**; behavior, schema and policy stayed unchanged. The subsequent development bundle showed no require-cycle warning.
+
+During acceptance, Expo's expected SDK-57 patch set advanced. **d41765a** changed only `package.json` / `package-lock.json`, preserving SDK major/minor:
+
+| Package | Before | After |
+| --- | --- | --- |
+| expo | 57.0.26 | 57.0.27 |
+| expo-asset | 57.0.18 | 57.0.19 |
+| expo-constants | 57.0.20 | 57.0.21 |
+| expo-linking | 57.0.11 | 57.0.12 |
+| expo-router | 57.0.24 | 57.0.25 |
+| expo-sqlite | 57.0.3 | 57.0.4 |
+
+Owen reports the intermediate CI run passed **332 tests / 22 suites** and failed only `expo install --check` because the expected patch set changed; this was compatibility maintenance, not a product defect. Subsequent dependency-update CI passed, as reported by Owen. No audit fix, SDK major/minor upgrade or unrelated package was added.
+
+## Physical iPhone acceptance — Owen's reported results
+
+### Library preservation and deliberate legacy scans — passed
+
+The existing v3 library migrated to v4 without reset: **Eyes Open (Pokemon Fanfic) 34/34**, **Normal Isn't Ordinary [Pokemon SI] 25/25**, **The Lantern Cartographer 3/3**. Saved passages, font/theme preferences and I1 timestamps remained usable/intact. The synthetic harbor stayed confined to the fixture; real stories did not gain it. S1/S2A remained separate development diagnostics. Opening Library/Story started no image discovery/download.
+
+Eyes Open initially showed **34 text chapters not scanned**; Normal Isn't Ordinary showed **25**. Deliberate Download Images scans each completed with **Images: no source images**, unchanged text counts and intact update timestamps. This establishes physical legacy zero-image discovery, not packet-level proof about historical body requests; exact saved-text compatibility remains implementation/test evidence.
+
+### Aenys image persistence, placement and MIME fix — passed
+
+**[ASOIAF SI] Aenys, King of Dreams**, author **Kingofwinter**, imported at **38/38 text chapters** with **58 image slots**. Before the MIME fix, the observed state was **0 local / 50 omitted / 8 pending**; those eight downloads became `content-type-mismatch`, leaving **0 local / 58 omitted / 0 pending**. Prose remained readable and explicit omission placeholders appeared. This exposed interoperability failure without reported data loss; the reasons for the initial 50 omissions were not supplied.
+
+After **fcd53badc5cf508e3adcca19832f04ffdf8a9caf**, Owen retained the existing library and deliberately used Retry Images. Final observed state was **57 local / 1 omitted / 0 pending**, still **38/38 text**. Real local images rendered between surrounding prose at the expected positions, including **Chapter 2 A Funeral and War Against The Seas** and **Overview of the State in 37 A.C**. No fixture harbor appeared in Aenys.
+
+**REAL SPACEBATTLES IMAGE DOWNLOAD + LOCAL RENDERING PASSED. I2 MIME INTEROPERABILITY FIX PHYSICALLY CONFIRMED.** Development diagnostics physically showed examples of **received image/jpeg / detected png / validated**, confirming that the live response can label PNG bytes as JPEG and that validated bytes correctly determine the accepted raster format. This is reported diagnostic/reader evidence, not raw response capture. No source image bytes are stored in Git.
+
+The observed **57/1/0** supersedes the earlier eight-only retest expectation. Explicit retry considers all current stored MIME-only omissions, not a fixed eight; no reason is inferred for each initial omission. Owen quickly checked every chapter but did not visually locate the single final omitted slot. Its count is not a visible-placeholder pass and its rejection reason is not asserted.
+
+### Already-running offline regeneration and reader regression — passed
+
+After images were local, Owen left the reader normally, disabled phone networking while the Expo Go project remained running, and reopened image-bearing chapters. At least **two image-bearing chapter views** still showed real local images with readable surrounding downloaded prose and usable navigation. **LOCAL SOURCE IMAGE + TEXT REGENERATION WITHOUT NETWORK PASSED.** This does not establish independent installation, Metro-free cold start or first launch in airplane mode; S2B remains deferred.
+
+Throughout I2, saved passage behavior, local placement, Previous / Next, Contents / Library and font-size/theme controls remained usable. Exact pixel restoration across changed image geometry is not promised; unrelated unreported accessibility/bridge/network diagnostics keep their prior status.
+
+### I1 manual update after images — passed
+
+With networking restored, Owen deliberately ran Check for Updates on Aenys. It completed with **Check finished. / Up to date.**, preserving **38/38 text** and **57 local · 1 omitted · 0 pending**. Displayed attempt/complete-check times advanced to approximately **10/6/2026, 9:09:56 PM / 9:10:02 PM**. This establishes working manual updates and preservation of visible persisted image state; no packet-level zero body/image request claim is made. Deterministic transport tests establish intended request behavior, and displayed timestamps are sequence evidence rather than wire timing.
+
+### Conditional physical cases — not exercised
+
+- **I2 multi-image cancellation / force-quit / relaunch / explicit retry:** the successful Aenys retry was allowed to complete to establish first real-image acceptance. Deterministic cancellation/retry/settlement tests and separate synthetic S2A interruption evidence remain distinct from an I2 normal-library kill test.
+- **Visible placeholder for the final single Aenys omission:** not located despite a quick check of every chapter. Pre-fix MIME-failure placeholders were observed separately.
+- **Missing/corrupt normal-library source-image recovery:** not physically exercised; I2 intentionally has no destructive normal-library diagnostic. Host tests cover it; S2A's historical bundled-raster recovery remains separate.
+- **Saved-unlisted chapter retaining source images:** no natural case was available.
+- **Naturally new I1 chapter with same-body I2 image extraction:** not physically exercised.
+
+These conditional omissions do not revoke core I2 acceptance. Saved-text mismatch and other unreported natural mutations/native-control/accessibility cases remain automated/conditional evidence. Exact iOS/Expo Go versions and native wire headers/cookies/cache/timing were not freshly verified. Global `PRAGMA foreign_key_check` performance and concurrent S1 diagnostic request-budget accounting remain deferred; prior image traffic is already excluded by S1's per-run baseline.
+
+The demonstrated physical loop is existing or newly imported story → deliberate discovery → eligible slots → source-byte download → actual raster validation/dimensions/budgets → generated local file/reference → image at the expected chapter position → leave/reopen → text + image from local state without network → preserved ordinary manual updates.
 
 ## Persistence and identity
 
@@ -34,15 +100,15 @@ No processing/decoder dependency was added. Accepted formats are PNG, JPEG and W
 
 Content-Type is a secondary veto after all byte checks. Accepted normalized labels are `image/png`, `image/jpeg`, `image/jpg`, `image/pjpeg`, `image/webp` and `application/octet-stream`; missing/blank MIME remains permitted only with valid raster bytes. Case and surrounding whitespace are normalized, parameters are discarded, and disagreement among those raster labels does not reject independently validated bytes. HTML/XHTML, XML/SVG, GIF, AVIF, APNG and every other unsupported or malformed label still reject even valid accepted raster bytes. Bytes alone determine the actual format, generated extension, dimensions, animation checks and limits. No byte parser was changed for MIME compatibility.
 
-Budgets are **2,000,000 compressed bytes**, **2,048 pixels per axis**, **4,194,304 pixels total**. These match the conservative existing fixture dimension/byte ceilings and bound a typical four-byte decoded surface to about 16 MiB. They are Stowaway application limits, not SpaceBattles rules. Validators establish bounded raster structure, not complete decoder correctness; a native decode failure still degrades through the reader's existing local-image error placeholder. The original constant-black lossless WebP fixture decoded in the host image viewer; the lossy VP8 header fixture exercises structural parsing only. Actual iPhone decoding remains physical acceptance work.
+Budgets are **2,000,000 compressed bytes**, **2,048 pixels per axis**, **4,194,304 pixels total**. These match the conservative existing fixture dimension/byte ceilings and bound a typical four-byte decoded surface to about 16 MiB. They are Stowaway application limits, not SpaceBattles rules. Validators establish bounded raster structure, not complete decoder correctness; a native decode failure still degrades through the reader's existing local-image error placeholder. The original constant-black lossless WebP fixture decoded in the host image viewer; the lossy VP8 header fixture exercises structural parsing only. Owen's Aenys run establishes real iPhone image decoding/rendering for the observed local images, not an exhaustive physical PNG/JPEG/WebP/animation-variant matrix.
 
 ### Physical MIME failure and explicit retry
 
-Owen reported that `[ASOIAF SI] Aenys, King of Dreams` imported **38/38 text chapters**, discovered **58 slots (50 omitted, 8 pending)**, then finished image work at **0 local, 58 omitted, 0 pending**. All eight previously eligible downloads became `content-type-mismatch`; placeholders and prose remained usable. This is reported phone evidence of failure, not real-image acceptance or wire inspection. The old exact MIME/byte-format equality gate ran after structural validation; the actual response MIME values were not captured, so no particular live alias is asserted.
+The first Aenys attempt above failed the old exact MIME/byte-format equality gate after structural validation. MIME values were not captured during that failed attempt. The subsequent accepted retest supplied `received image/jpeg / detected png / validated`, physically confirming the safe raster-label disagreement addressed by the fix; no particular live JPEG alias is asserted.
 
-The existing v4 reason identifies those eight retry candidates without a migration or reset. Contents shows **Retry Images** and the retryable count even when every slot is omitted. Opening screens still performs no source work. A deliberate retry uses existing slot mappings and source URLs, skips other omissions and valid local files, and commits fresh validated references through the unchanged staging/transaction order. Network/access failure or cancellation retains untouched MIME omissions for a later explicit retry. No body rescan, text replacement or manifest check is required for this already-scanned story.
+The existing v4 reason identifies all stored MIME-only retry candidates without a migration or reset. Contents shows **Retry Images** and the retryable count even when every slot is omitted. Opening screens still performs no source work. A deliberate retry uses existing slot mappings and source URLs, skips non-MIME omissions and valid local files, and commits fresh validated references through the unchanged staging/transaction order. Network/access failure or cancellation retains untouched MIME omissions for a later explicit retry. No body rescan, text replacement or manifest check is required for this already-scanned story.
 
-Each operation returns at most eight transient MIME diagnostics, prioritizing rejections over successful samples, shown only by the development Contents UI: chapter ID, slot, normalized received MIME, byte-detected accepted format and validated/rejected status. The media-type token is bounded to 97 characters; malformed/overlong tokens or CR/LF/NUL values become `invalid`, missing MIME becomes `(missing)`, and parameters are discarded. Diagnostics contain no bytes, prose, source URLs, credentials or raw headers, and are neither logged nor persisted. `validated` describes byte/MIME validation, not successful reference commit; use authoritative local counts for persistence. The [Aenys retest](I2_Device_Checklist.md#i-aenys-mime-compatibility-retest) remains pending.
+Each operation returns at most eight transient MIME diagnostics, prioritizing rejections over successful samples, shown only by the development Contents UI: chapter ID, slot, normalized received MIME, byte-detected accepted format and validated/rejected status. The media-type token is bounded to 97 characters; malformed/overlong tokens or CR/LF/NUL values become `invalid`, missing MIME becomes `(missing)`, and parameters are discarded. Diagnostics contain no bytes, prose, source URLs, credentials or raw headers, and are neither logged nor persisted. `validated` describes byte/MIME validation, not successful reference commit; use authoritative local counts for persistence. The [Aenys retest](I2_Device_Checklist.md#i-aenys-mime-compatibility-retest) is physically confirmed at **57 local / 1 omitted / 0 pending**.
 
 ## File/reference recovery and cleanup
 
@@ -103,7 +169,7 @@ The separate sequential completed-diff review covered production modules, integr
 | Cancellation | Abortable cooldown/read, no next request after observed cancellation; earlier validated candidates may commit during settlement. UI navigation remains blocked through settlement/final local refresh. |
 | Same-story ownership | Shared import/update/resume/image lock plus SQL chapter/story/current-membership checks; lock-busy, cancellation and route/focus settlement tests. |
 
-This audit establishes code/host-test evidence. No phone run or wire-level result is claimed. The [physical checklist](I2_Device_Checklist.md) covers v3 preservation, deliberate natural discovery/local rendering, already-running offline regeneration, practical cancellation/relaunch/retry, natural omissions, host-only missing/corrupt recovery and reader/I1/navigation regression.
+This security audit establishes code/host-test evidence, separate from Owen's reported physical acceptance above. No agent-operated phone run or wire-level result is claimed. The [physical checklist](I2_Device_Checklist.md) distinguishes observed preservation/discovery/local rendering/offline regeneration/I1/reader passes from unexercised cancellation/relaunch, the final natural omission and normal-library missing/corrupt recovery.
 
 ### MIME compatibility follow-up validation
 
@@ -111,7 +177,7 @@ The narrow MIME follow-up adds **61 deterministic cases**: 50 MIME/byte-policy c
 
 Validation on Node **22.23.3**: `npm.cmd run check` passed TypeScript/lint and **393 tests / 23 suites**; `npx.cmd expo install --check` reported dependencies up to date; `npx.cmd expo-doctor@latest` passed **21/21**; `npx.cmd expo export --platform ios` exported the **1,248-module iOS Hermes bundle**; working/staged `git diff --check` passed. No dependency/lockfile changes or live SpaceBattles requests were made. Generated output/logs remain ignored.
 
-A separate sequential diff/security review verified the unchanged byte parsers and budgets, unsupported MIME vetoes even for accepted raster bytes, conservative pre-validation login/challenge detection, byte-derived local format/extension, unchanged fresh-file/reference ordering and ownership checks, and the reason-specific deliberate retry boundary. Review refined the bounded diagnostic sample to retain later MIME rejections in preference to successes; the added regression and final check/export passed. No blocking finding remains. This is host evidence only; the Aenys image-rendering/offline retest and physical I2 acceptance remain pending.
+A separate sequential diff/security review verified the unchanged byte parsers and budgets, unsupported MIME vetoes even for accepted raster bytes, conservative pre-validation login/challenge detection, byte-derived local format/extension, unchanged fresh-file/reference ordering and ownership checks, and the reason-specific deliberate retry boundary. Review refined the bounded diagnostic sample to retain later MIME rejections in preference to successes; the added regression and final check/export passed. No blocking finding remained. At that review checkpoint the phone retest was still pending; Owen's subsequent accepted Aenys rendering/offline result is recorded above. The synthetic 58-slot/eight-MIME-failure test is a fixture scenario, not an inventory of the live story's initial omission reasons.
 
 Follow-up files: `src/images/validate.ts`, `src/images/types.ts`, `src/images/download.ts`, `src/images/repository.ts`, `src/images/summary.ts`, `src/app/story.tsx`, `tests/i2-mime.test.ts`, `tests/i2-images.test.ts`, `tests/integration/i2-images.test.ts`, `tests/i1-screens.test.tsx`, `docs/I2_Source_Images.md`, `docs/I2_Device_Checklist.md`.
 
@@ -157,4 +223,22 @@ tests/integration/i1-update.test.ts
 tests/integration/i2-images.test.ts
 ```
 
-No read/unread, deletion, automatic/background/scheduled update/image job, additional site/category, media/gallery/transcoding, revisions/sync/backend, S2B, EAS/Apple/signing/paid work, PR creation or merge is included. Stop after candidate commit/push and Owen's report handoff.
+No read/unread, deletion, automatic/background/scheduled update/image job, additional site/category, media/gallery/transcoding, revisions/sync/backend, S2B or EAS/Apple/signing/paid work is included. Core I2 acceptance is recorded with the qualifications above. Acceptance documentation, full validation, a separate acceptance commit/push and PR preparation against main are authorized; no merge or next product slice is authorized.
+
+## Acceptance-bookkeeping validation and PR preparation — 6 October 2026
+
+This follow-up started on clean `feat/source-images` at **fcd53badc5cf508e3adcca19832f04ffdf8a9caf**. Fetch confirmed `origin/main` at merged I1 **bba2c01ef6d984a8dc3b330bd4e7b84ee6d39e74**. Tracked changes are limited to **AGENTS.md, README.md, docs/I2_Source_Images.md and docs/I2_Device_Checklist.md**. No production code, schema, request policy, tests, dependencies or lockfile changed. Historical S2A/I0/I1 acceptance records and the audit were read and retained unchanged. No live SpaceBattles request or prose/raw-page/image-byte/screenshot capture was made during bookkeeping; no private download, credential or build output is committed.
+
+Current validation on Node **22.23.3**:
+
+```text
+npm.cmd run check                    TypeScript + lint + 393 tests / 23 suites passed
+npx.cmd expo install --check          Dependencies are up to date
+npx.cmd expo-doctor@latest            21/21 checks passed
+npx.cmd expo export --platform ios    Local iOS Hermes bundle, 1,248 modules, exported to ignored dist/
+git diff --check                     Passed, including the staged documentation
+```
+
+Expo metadata/npm-cache checks used approved access without changing packages. Host SQLite's experimental warning is informational. The export is compilation evidence, not S2B acceptance. The sequential documentation review matched physical checkmarks to Owen's supplied report, corrected the earlier eight-only retest expectation to the observed **57/1/0**, retained the final omission as visually unexercised, separated I2 from historical S2A/I0/I1 evidence, and preserved both deferred technical follow-ups. No unreported conditional/native/wire check was marked passed.
+
+GitHub CLI is unavailable on PATH. PR title: **I2: Offline SpaceBattles source images**. The prepared body is outside tracked Git at ignored **.tools/I2_PR_Body.md**. For manual creation, open the [main-to-I2 comparison](https://github.com/owencchapman24/stowaway/compare/main...feat/source-images?expand=1), confirm base **main** / compare **feat/source-images**, paste that title and the saved body, then click **Create pull request**. No PR was created by this fallback and **no merge is authorized**. No read/unread, deletion, additional image feature, automatic/background work, S2B or next product slice was started.
