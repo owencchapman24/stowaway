@@ -10,7 +10,7 @@ import { createRenderFile } from '../storage/files';
 import { Control, ReaderControls } from '../reader/controls';
 import { PositionSession, parseMessage } from '../reader/position';
 import { allowReaderNavigation } from '../reader/navigation';
-import { ReadEndSession } from './read-state';
+import { ReadEndSession, type ReadCompletion } from './read-state';
 
 interface ReaderModel {
   chapter: Chapter;
@@ -29,10 +29,10 @@ export interface ChapterReaderProps {
   onNavigate(destination: string | null, storyId?: string): void;
   renderFile?: typeof createRenderFile;
   retainRenderFiles?: boolean;
-  onReachedEnd?(chapterId: string): Promise<void>;
+  readCompletion?: ReadCompletion;
 }
 export function ChapterReader({ chapterId, repository, preferences, changePreferences, onRetry, onNavigate,
-  renderFile = createRenderFile, retainRenderFiles = false, onReachedEnd }: ChapterReaderProps) {
+  renderFile = createRenderFile, retainRenderFiles = false, readCompletion }: ChapterReaderProps) {
   const preferencesRef = useRef(preferences);
   useEffect(() => { preferencesRef.current = preferences; }, [preferences]);
   const web = useRef<WebView>(null);
@@ -41,11 +41,14 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settling, setSettling] = useState(false);
+  const alive = useRef(true);
   const exiting = useRef(false);
   const webFailed = useRef(false);
   const flushAcknowledgement = useRef<(() => void) | null>(null);
 
   useEffect(() => {
+    alive.current = true;
     let active = true;
     let loaded: ReaderModel | null = null;
     repository.getChapter(chapterId).then(async (chapter) => {
@@ -58,17 +61,21 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       const positions = new PositionSession(repository.saveLocator, () => {
         if (active) setError('Could not save the latest position. The previous saved passage is retained.');
       });
-      const readEnd = onReachedEnd ? new ReadEndSession(() => onReachedEnd(chapter.id), () => {
+      const readError = () => {
         if (active) setError('Could not save Read state locally. The previous state is retained. Retry leaving to save again.');
-      }) : null;
+      };
+      const readEnd = readCompletion ? new ReadEndSession(readCompletion, readError) : null;
       loaded = { chapter, session, file, positions, readEnd };
       if (!active) { positions.dispose(); if (!retainRenderFiles) file.directory.delete(); return; }
       modelRef.current = loaded;
       setChapters(list);
       setModel(loaded);
+      // Only an already accepted intent can be retried here; loading never requests Read.
+      void readEnd?.flush().catch(readError);
     }).catch(() => { if (active) setError('Could not open this local chapter. Your stored text has not been reset.'); });
     return () => {
       active = false;
+      alive.current = false;
       modelRef.current = null;
       flushAcknowledgement.current?.();
       flushAcknowledgement.current = null;
@@ -76,7 +83,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       try { if (!retainRenderFiles && loaded?.file.directory.exists) loaded.file.directory.delete(); }
       catch { /* Disposable render files may be left until the next app-data cleanup. */ }
     };
-  }, [chapterId, repository, renderFile, retainRenderFiles, onReachedEnd]);
+  }, [chapterId, repository, renderFile, retainRenderFiles, readCompletion]);
 
   const flushForExit = useCallback(async (): Promise<void> => {
     const current = modelRef.current;
@@ -111,36 +118,47 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     return () => subscription.remove();
   }, [flushForExit]);
 
-  async function go(destination: string | null) {
-    if (exiting.current) return;
-    exiting.current = true;
-    try {
-      await flushForExit();
-      onNavigate(destination, modelRef.current?.chapter.storyId);
-    } catch (failure) {
-      exiting.current = false;
-      setError(failure instanceof Error ? failure.message : 'Could not save before leaving. Please retry.');
+  function allowInteraction(enabled: boolean) {
+    if (web.current && !webFailed.current) {
+      web.current.injectJavaScript(`window.StowawayReader && window.StowawayReader.setInteractionEnabled(${enabled}); true;`);
     }
   }
 
-  async function reopen() {
-    if (exiting.current) return;
+  async function replaceReader(replace: (current: ReaderModel | null) => void, reopening: boolean) {
+    if (!alive.current || exiting.current) return;
     exiting.current = true;
+    setSettling(true);
     const current = modelRef.current;
-    if (!current) { onRetry(); return; }
     try {
-      // Keep the session (and failed completion intent) until local saves succeed.
+      // Stop new trusted reading input, but keep accepting already queued messages.
+      allowInteraction(false);
       await flushForExit();
-      if (modelRef.current === current) onRetry();
-    } catch {
-      if (modelRef.current === current) {
+      const handoff = () => {
+        if (alive.current && (!current || modelRef.current === current)) replace(modelRef.current);
+      };
+      if (readCompletion) {
+        try { await readCompletion.settle(handoff); }
+        catch { throw new Error('Could not save Read state locally. Please retry leaving.'); }
+      } else handoff();
+    } catch (failure) {
+      if (alive.current && (!current || modelRef.current === current)) {
         exiting.current = false;
-        setError('Could not save local progress before reopening. Your pending saves are retained. Please retry.');
+        setSettling(false);
+        try { allowInteraction(true); } catch { webFailed.current = true; setReady(false); }
+        setError(reopening ? 'Could not save local progress before reopening. Your pending saves are retained. Please retry.'
+          : failure instanceof Error ? failure.message : 'Could not save before leaving. Please retry.');
       }
     }
   }
 
+  async function go(destination: string | null) {
+    await replaceReader((current) => onNavigate(destination, current?.chapter.storyId), false);
+  }
+
+  async function reopen() { await replaceReader(() => onRetry(), true); }
+
   function onTerminated() {
+    if (!alive.current) return;
     webFailed.current = true;
     setReady(false);
     flushAcknowledgement.current?.();
@@ -149,11 +167,11 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
 
   async function restyle(value: Preferences) {
     const current = modelRef.current;
-    if (!current || !ready) return;
+    if (!current || !ready || exiting.current) return;
     setReady(false);
     try {
       await changePreferences(value);
-      if (modelRef.current === current) {
+      if (modelRef.current === current && !webFailed.current) {
         web.current?.injectJavaScript(`window.StowawayReader && window.StowawayReader.restyle(${value.fontSize}, ${JSON.stringify(value.theme)}); true;`);
       }
     } catch {
@@ -169,7 +187,11 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     if (!message) return;
     current.positions.receive(message);
     current.readEnd?.receive(message);
-    if (message.type === 'ready') setReady(true);
+    if (message.type === 'ready') {
+      setReady(true);
+      // A rendering that finishes loading during settlement must also be frozen.
+      if (exiting.current) allowInteraction(false);
+    }
     if (message.type === 'layout-start') setReady(false);
     if (message.type === 'flushed') flushAcknowledgement.current?.();
     if (message.type === 'link') {
@@ -184,11 +206,12 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   return <SafeAreaView style={styles.page}>
     <Stack.Screen options={{ gestureEnabled: false }} />
     <Text style={styles.title} numberOfLines={2} accessibilityRole="header">{model?.chapter.title ?? 'Reader'}</Text>
-    <ReaderControls preferences={preferences} disabled={!ready} onChange={(value) => { void restyle(value); }} />
+    <ReaderControls preferences={preferences} disabled={!ready || settling} onChange={(value) => { void restyle(value); }} />
     {error && <View style={styles.status}><Text accessibilityRole="alert">{error}</Text>
       <Control label="Reopen local chapter" text="Retry" onPress={() => { void reopen(); }} /></View>}
     {!ready && !error && <View style={styles.status}><ActivityIndicator /><Text>Restoring your passage…</Text></View>}
     {model && <WebView ref={web} source={{ uri: model.file.uri }}
+      pointerEvents={settling ? 'none' : 'auto'}
       style={[styles.reader, { opacity: ready ? 1 : 0, backgroundColor: preferences.theme === 'dark' ? '#15191e' : '#faf7f0' }]}
       allowingReadAccessToURL={model.file.readAccess}
       // Route every navigation through our callback. Whitelists alone can launch external URLs.

@@ -4,7 +4,7 @@ import type { Locator } from '../src/domain/types';
 
 type BridgeWindow = Window & typeof globalThis & {
   ReactNativeWebView: { postMessage: (raw: string) => void };
-  StowawayReader: { flush: () => void; restyle: (size: number, theme: string) => void };
+  StowawayReader: { flush: () => void; restyle: (size: number, theme: string) => void; setInteractionEnabled: (enabled: boolean) => void };
 };
 const bridgeWindow = window as BridgeWindow;
 let messages: { type: string; locator?: Locator; linkId?: string }[];
@@ -74,6 +74,24 @@ function readingGesture(type = 'touchmove', trusted = true, target: EventTarget 
   gesture(type, { isTrusted: trusted, target, preventDefault: jest.fn() });
 }
 const completions = () => messages.filter((message) => message.type === 'read-end');
+
+test('replacement freeze blocks trusted reading/link events, preserves the last locator and requires fresh input after recovery', () => {
+  run(null); gesture('touchstart', { isTrusted: true }); readingGesture(); window.scrollTo(0, 300);
+  bridgeWindow.StowawayReader.setInteractionEnabled(false); bridgeWindow.StowawayReader.flush();
+  expect(messages.filter((message) => message.type === 'position')).toHaveLength(1);
+  window.scrollTo(0, 800); readingGesture('touchend'); readingGesture('click', true, document.querySelector('a')!);
+  jest.runAllTimers();
+  expect(completions()).toEqual([]); expect(messages.filter((message) => message.type === 'link')).toEqual([]);
+  bridgeWindow.StowawayReader.setInteractionEnabled(true); window.dispatchEvent(new Event('scroll'));
+  expect(completions()).toEqual([]); readingGesture('touchend'); expect(completions()).toHaveLength(1);
+});
+
+test('freezing does not retract an already generated completion or duplicate it after unfreezing', () => {
+  run(null); readingGesture(); window.scrollTo(0, 800); expect(completions()).toHaveLength(1);
+  bridgeWindow.StowawayReader.setInteractionEnabled(false); bridgeWindow.StowawayReader.flush();
+  bridgeWindow.StowawayReader.setInteractionEnabled(true); readingGesture('touchend');
+  expect(completions()).toHaveLength(1);
+});
 
 test('opening/restoring at bottom and background/pagehide/flush alone never complete a chapter', () => {
   run({ ...locator, contentHash: 'old', progression: 1 });

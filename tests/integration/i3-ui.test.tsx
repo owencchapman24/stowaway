@@ -41,11 +41,12 @@ jest.mock('../../src/storage/files', () => ({ createRenderFile: jest.fn() }));
 jest.mock('react-native-webview', () => {
   const { View } = jest.requireActual('react-native');
   const { forwardRef, useImperativeHandle } = jest.requireActual('react');
-  return { __esModule: true, default: forwardRef(function Web({ onMessage, onError, onContentProcessDidTerminate }: {
+  return { __esModule: true, default: forwardRef(function Web({ onMessage, onError, onContentProcessDidTerminate, pointerEvents }: {
     onMessage: (event: unknown) => void; onError: () => void; onContentProcessDidTerminate: () => void;
+    pointerEvents: string;
   }, ref: unknown) {
     useImperativeHandle(ref, () => ({ injectJavaScript: (script: string) => mockInject(script) }));
-    return <View testID="reader-web" onMessage={onMessage} onError={onError} onContentProcessDidTerminate={onContentProcessDidTerminate} />;
+    return <View testID="reader-web" pointerEvents={pointerEvents} onMessage={onMessage} onError={onError} onContentProcessDidTerminate={onContentProcessDidTerminate} />;
   }) };
 });
 const digest = async (value: string) => createHash('sha256').update(value).digest('hex');
@@ -91,6 +92,38 @@ function reopen(kind: 'retry' | 'termination') {
 function savedPassage() {
   return { chapterId: chapter.id, contentHash: chapter.contentHash, blockId: chapter.blockIds[0]!,
     offset: 9, progression: .9, expandedSpoilers: [] };
+}
+
+async function lateCompletionRecovery(kind: 'retry' | 'termination') {
+  const firstLocator = gate(), finalLocator = gate(), originalLocator = repo.saveLocator, originalRead = repo.markChapterRead;
+  let locatorCalls = 0;
+  const position = jest.spyOn(repo, 'saveLocator').mockImplementation(async (locator) => {
+    locatorCalls++;
+    if (kind === 'termination' && locatorCalls === 2) await firstLocator.promise;
+    if (locatorCalls === 3) await finalLocator.promise;
+    await originalLocator(locator);
+  });
+  const save = jest.spyOn(repo, 'markChapterRead');
+  await readyReader(); const locator = { ...savedPassage(), offset: 10 };
+  host.failNextCommit(); act(() => send('position', { locator: savedPassage(), reason: 'flush' }));
+  await waitFor(() => expect(screen.getByText(/Could not save the latest position/)).toBeTruthy());
+  mockInject = (script) => {
+    if (kind === 'termination') throw new Error('Dead WebView must not be sampled or commanded');
+    if (script.includes('.flush()')) { send('position', { locator, reason: 'flush' }); send('flushed'); }
+  };
+  reopen(kind);
+  if (kind === 'termination') {
+    await waitFor(() => expect(locatorCalls).toBe(2));
+    // A queued last sample can still arrive from the old renderer without sampling it.
+    act(() => send('position', { locator, reason: 'flush' }));
+    await act(async () => firstLocator.release());
+  }
+  await waitFor(() => expect(locatorCalls).toBe(3));
+  host.failNextCommit(); act(() => send('read-end'));
+  await waitFor(() => expect(screen.getByText(/Could not save Read state locally/)).toBeTruthy());
+  expect((await repo.listContents(id))[1]?.isRead).toBe(false);
+  expect(createRenderFile).toHaveBeenCalledTimes(1); expect(save).toHaveBeenCalledTimes(1);
+  return { finalLocator, locator, save, position, originalRead, originalLocator };
 }
 
 test('opening Library/Contents is local/read-only and shows current unread including pending, excluding saved', async () => {
@@ -246,6 +279,7 @@ test.each(['retry', 'termination'] as const)('%s recovery holds remount/navigati
   await waitFor(() => expect(screen.getByText(/Could not save Read state locally/)).toBeTruthy());
   const retainedRetry = handler('Reopen local chapter'); reopen(kind);
   await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(screen.getByTestId('reader-web').props.pointerEvents).toBe('none');
   act(() => { retainedRetry(); reopen('termination'); });
   fireEvent.press(screen.getByLabelText('Return to story contents'));
   expect(createRenderFile).toHaveBeenCalledTimes(1); expect(router.replace).not.toHaveBeenCalled();
@@ -260,6 +294,105 @@ test('Retry after an initial local render failure remains ordinary recovery with
   await waitFor(() => expect(screen.getByText(/Could not open this local chapter/)).toBeTruthy());
   reopen('retry'); await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy());
   expect(createRenderFile).toHaveBeenCalledTimes(2); expect(save).not.toHaveBeenCalled();
+});
+
+test.each(['retry', 'termination'] as const)('late completion during final %s locator wait survives real SQLite rollback and recovery before remount', async (kind) => {
+  const { finalLocator, locator, save } = await lateCompletionRecovery(kind);
+  await act(async () => finalLocator.release());
+  await waitFor(() => expect(createRenderFile).toHaveBeenCalledTimes(2));
+  expect((await repo.listContents(id))[1]?.isRead).toBe(true); expect(save).toHaveBeenCalledTimes(2);
+  expect(await repo.getLocator(chapter.id)).toEqual(locator);
+  expect(jest.mocked(createRenderFile).mock.calls[1]![1]).toEqual(locator);
+  await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy()); act(() => send('ready'));
+  mockInject = (script) => { if (script.includes('.flush()')) send('flushed'); };
+  fireEvent.press(screen.getByLabelText('Return to story contents'));
+  await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1));
+  expect(save).toHaveBeenCalledTimes(2); expect((await repo.listContents(id))[1]?.isRead).toBe(true);
+});
+
+test.each(['retry', 'termination'] as const)('late %s completion survives a second real Read rollback and later visible Retry', async (kind) => {
+  const { finalLocator, locator, save, originalRead } = await lateCompletionRecovery(kind);
+  save.mockImplementationOnce(async (...args) => { host.failNextCommit(); await originalRead(...args); });
+  await act(async () => finalLocator.release());
+  await waitFor(() => expect(screen.getByText(/Could not save local progress before reopening/)).toBeTruthy());
+  expect(save).toHaveBeenCalledTimes(2); expect(createRenderFile).toHaveBeenCalledTimes(1);
+  expect((await repo.listContents(id))[1]?.isRead).toBe(false); expect(await repo.getLocator(chapter.id)).toEqual(locator);
+  expect(screen.getByLabelText('Reopen local chapter')).toBeEnabled();
+  expect(screen.getByTestId('reader-web').props.pointerEvents).toBe('auto');
+  reopen('retry'); await waitFor(() => expect(createRenderFile).toHaveBeenCalledTimes(2));
+  expect(save).toHaveBeenCalledTimes(3); expect((await repo.listContents(id))[1]?.isRead).toBe(true);
+  expect(await repo.getLocator(chapter.id)).toEqual(locator);
+});
+
+test('late completion survives locator rollback, then Read success remains independent of further locator failure', async () => {
+  const { finalLocator, locator, save, position, originalLocator } = await lateCompletionRecovery('retry');
+  host.failNextCommit(); await act(async () => finalLocator.release());
+  await waitFor(() => expect(screen.getByText(/Could not save local progress before reopening/)).toBeTruthy());
+  expect(save).toHaveBeenCalledTimes(1); expect((await repo.listContents(id))[1]?.isRead).toBe(false);
+  expect(await repo.getLocator(chapter.id)).toEqual(savedPassage());
+  position.mockRejectedValue(new Error('Locator remains unavailable'));
+  reopen('retry'); await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  await waitFor(async () => expect((await repo.listContents(id))[1]?.isRead).toBe(true));
+  expect(createRenderFile).toHaveBeenCalledTimes(1); expect(await repo.getLocator(chapter.id)).toEqual(savedPassage());
+  position.mockImplementation(originalLocator); reopen('retry');
+  await waitFor(() => expect(createRenderFile).toHaveBeenCalledTimes(2));
+  expect(save).toHaveBeenCalledTimes(2); expect(await repo.getLocator(chapter.id)).toEqual(locator);
+});
+
+test('route-owned completion survives keyed replacement and stale old reader callbacks cannot replace or mutate the new session', async () => {
+  const retryWrite = gate(), original = repo.markChapterRead;
+  const save = jest.spyOn(repo, 'markChapterRead').mockImplementationOnce(original)
+    .mockImplementation(async (...args) => { await retryWrite.promise; await original(...args); });
+  const locator = savedPassage(); await repo.saveLocator(locator);
+  await readyReader(); const old = screen.getByTestId('reader-web').props;
+  const oldContents = handler('Return to story contents');
+  host.failNextCommit(); act(() => send('read-end'));
+  await waitFor(() => expect(screen.getByText(/Could not save Read state locally/)).toBeTruthy());
+  const oldRetry = handler('Reopen local chapter');
+  const route = screen.UNSAFE_getByType(ChapterReader).props;
+  // Force the lifetime boundary itself: even a request beyond the child drain
+  // cannot be erased by the parent's keyed replacement.
+  act(() => route.onRetry());
+  await waitFor(() => expect(createRenderFile).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(screen.UNSAFE_getByType(ChapterReader).props.readCompletion).toBe(route.readCompletion);
+  act(() => {
+    oldRetry(); oldContents(); old.onContentProcessDidTerminate();
+    old.onMessage({ nativeEvent: { data: JSON.stringify({ type: 'read-end', session, chapterId: chapter.id, contentHash: chapter.contentHash }) } });
+  });
+  expect(createRenderFile).toHaveBeenCalledTimes(2); expect(router.replace).not.toHaveBeenCalled();
+  await act(async () => retryWrite.release());
+  await waitFor(async () => expect((await repo.listContents(id))[1]?.isRead).toBe(true));
+  expect(save).toHaveBeenCalledTimes(2); expect(await repo.getLocator(chapter.id)).toEqual(locator);
+});
+
+test('ordinary locator-only Retry preserves the passage without requesting Read', async () => {
+  const save = jest.spyOn(repo, 'markChapterRead'); await readyReader(); const locator = savedPassage();
+  host.failNextCommit(); act(() => send('position', { locator, reason: 'flush' }));
+  await waitFor(() => expect(screen.getByText(/Could not save the latest position/)).toBeTruthy());
+  reopen('retry'); await waitFor(() => expect(createRenderFile).toHaveBeenCalledTimes(2));
+  expect(save).not.toHaveBeenCalled(); expect(await repo.getLocator(chapter.id)).toEqual(locator);
+  expect((await repo.listContents(id))[1]?.isRead).toBe(false);
+});
+
+test('route-owned pending Read blocks leaving during keyed reader restoration before a new model exists', async () => {
+  const readWrite = gate(), renderWait = gate(), originalRead = repo.markChapterRead;
+  const renderFile = jest.mocked(createRenderFile).getMockImplementation()!;
+  const save = jest.spyOn(repo, 'markChapterRead').mockImplementationOnce(originalRead)
+    .mockImplementation(async (...args) => { await readWrite.promise; await originalRead(...args); });
+  const view = render(<Reader />); await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy());
+  act(() => send('ready')); host.failNextCommit(); act(() => send('read-end'));
+  await waitFor(() => expect(screen.getByText(/Could not save Read state locally/)).toBeTruthy());
+  jest.mocked(createRenderFile).mockImplementation(async (...args) => { await renderWait.promise; return renderFile(...args); });
+  act(() => screen.UNSAFE_getByType(ChapterReader).props.onRetry());
+  await waitFor(() => expect(createRenderFile).toHaveBeenCalledTimes(2));
+  expect(screen.queryByTestId('reader-web')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Return to story contents'));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(router.replace).not.toHaveBeenCalled();
+  await act(async () => readWrite.release()); await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1));
+  expect((await repo.listContents(id))[1]?.isRead).toBe(true); expect(save).toHaveBeenCalledTimes(2);
+  view.unmount(); await act(async () => renderWait.release());
 });
 test('termination with no completion request reopens without inferring Read', async () => {
   const save = jest.spyOn(repo, 'markChapterRead'); await readyReader(); reopen('termination');

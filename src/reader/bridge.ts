@@ -3,6 +3,7 @@ export const POSITION_BRIDGE = String.raw`
 (function () {
   'use strict';
   let ready = false;
+  let interactionEnabled = true;
   let engaged = false;
   let dirty = false;
   let timer = null;
@@ -19,14 +20,14 @@ export const POSITION_BRIDGE = String.raw`
   // Completion is a live-layout observation, never a locator/progression guess.
   // A scroll needs a recent trusted scrolling input with unchanged geometry.
   function readEnd() {
-    if (!ready || readEndSent || maxScroll() - window.scrollY > 24) return;
+    if (!ready || !interactionEnabled || readEndSent || maxScroll() - window.scrollY > 24) return;
     readEndSent = true;
     readingGesture = null;
     send({ type: 'read-end' });
   }
   function invalidateGesture() { readingGesture = null; }
   function readingInput(event) {
-    if (!ready || !event.isTrusted || readEndSent || !root.contains(event.target)) return;
+    if (!ready || !interactionEnabled || !event.isTrusted || readEndSent || !root.contains(event.target)) return;
     const element = event.target instanceof Element ? event.target : event.target.parentElement;
     // Following links and changing spoiler geometry are separate deliberate actions.
     if (element && element.closest('a, summary')) { invalidateGesture(); return; }
@@ -75,7 +76,7 @@ export const POSITION_BRIDGE = String.raw`
     dirty = false;
   }
   function mark() {
-    if (!ready || !engaged) return;
+    if (!ready || !interactionEnabled || !engaged) return;
     dirty = true;
     if (timer) clearTimeout(timer);
     timer = setTimeout(function () { flush('scroll'); }, 150);
@@ -123,7 +124,7 @@ export const POSITION_BRIDGE = String.raw`
       });
     });
   }
-  function engage(event) { if (ready && event.isTrusted) engaged = true; }
+  function engage(event) { if (ready && interactionEnabled && event.isTrusted) engaged = true; }
   ['touchstart', 'pointerdown', 'wheel', 'keydown'].forEach(function (type) {
     document.addEventListener(type, engage, { passive: true });
   });
@@ -138,7 +139,7 @@ export const POSITION_BRIDGE = String.raw`
     const anchor = element && element.closest('a');
     if (anchor) {
       event.preventDefault();
-      if (ready && event.isTrusted && anchor.dataset.link) send({ type: 'link', linkId: anchor.dataset.link });
+      if (ready && interactionEnabled && event.isTrusted && anchor.dataset.link) send({ type: 'link', linkId: anchor.dataset.link });
       return;
     }
     engage(event);
@@ -147,6 +148,7 @@ export const POSITION_BRIDGE = String.raw`
   document.addEventListener('visibilitychange', function () { if (document.hidden) flush('flush'); });
   window.addEventListener('pagehide', function () { flush('flush'); });
   window.StowawayReader = Object.freeze({
+    setInteractionEnabled: function (enabled) { interactionEnabled = enabled === true; invalidateGesture(); },
     flush: function () { flush('flush'); send({ type: 'flushed' }); },
     restyle: function (fontSize, theme) {
       if (!ready || !Number.isFinite(fontSize) || fontSize < 14 || fontSize > 32 ||
