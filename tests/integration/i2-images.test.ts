@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { DomUtils, parseDocument } from 'htmlparser2';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -7,10 +8,11 @@ import { compileFixture, createRepository } from '../../src/storage/repository';
 import { createLocalContentFiles } from '../../src/storage/local-files';
 import { createSourceImageFiles, sourceAssetPath } from '../../src/images/files';
 import { downloadImages } from '../../src/images/download';
+import { renderSourceImages } from '../../src/images/render';
 import { extractPostContent } from '../../src/sources/spacebattles/parse';
 import { RequestClient } from '../../src/sources/spacebattles/request';
 import { ORIGIN, threadFromUrl } from '../../src/sources/spacebattles/url';
-import { prepareContent } from '../../src/content/sanitize';
+import { escapeHtml, prepareContent } from '../../src/content/sanitize';
 import { importStory, updateStory } from '../../src/importing/import-story';
 import type { StoryMetadata } from '../../src/domain/types';
 import { jpeg, png, webp } from '../fixtures/images';
@@ -402,4 +404,131 @@ test('generated many-chapter/image story cancels and retries with batched refs a
   expect((await run(retry)).failure).toBeNull();
   expect(retry.calls).toHaveLength(336); expect(commit).toHaveBeenCalledTimes(56);
   expect(await repo.getImageSummary(id)).toMatchObject({ local: 360, pending: 0 }); expect(await repo.getStory(id)).toMatchObject({ downloaded: 30, total: 30 });
+});
+
+async function renderHostileAlts(alts: string[]) {
+  const body = '<p>Generated before.</p>' + alts.map((alt, i) => `<img src="/attachments/generated-${i}.png" alt="${escapeHtml(alt)}">`).join('') + '<p>Generated after.</p>';
+  const chapter = await seed(body, true), locator = await repo.getLocator(chapterId);
+  expect((await run()).failure).toBeNull();
+  const images = await repo.listChapterImages(chapterId), directory = `reader/${uuid()}`;
+  files.mkdir(directory);
+  const html = await renderSourceImages(chapter, images, files, directory, imageFiles);
+  const dom = parseDocument(html), rendered = DomUtils.getElementsByTagName('img', dom.children, true);
+  expect(rendered).toHaveLength(alts.length);
+  for (const [slot, alt] of alts.entries()) {
+    expect(rendered[slot]!.attribs).toEqual({ src: `source-image-${slot}.png`, width: '2', height: '3', alt });
+    expect(await files.read(`${directory}/source-image-${slot}.png`)).toEqual(png());
+  }
+  for (const blockId of chapter.blockIds) expect(DomUtils.findAll((node) => node.attribs.id === blockId, dom.children)).toHaveLength(1);
+  for (const prose of ['Generated before.', 'Generated after.']) expect(html.split(prose)).toHaveLength(2);
+  expect(DomUtils.getElementsByTagName('script', dom.children, true)).toEqual([]);
+  expect(html).not.toContain(`${ORIGIN}/attachments/`);
+  // Every replacement adds fixed markup plus at most six escaped chars per alt char.
+  expect(html.length).toBeLessThanOrEqual(chapter.html.length + alts.reduce((sum, alt) => sum + 200 + 6 * alt.length, 0));
+  expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
+}
+test.each(['$&', '$`', "$'", '$$', '$& $` $\' $$ "><img src="https://outside.invalid/x" onload="bad()"> &'])('source alt %s is literal escaped local-image content', async (alt) => {
+  await renderHostileAlts([alt]);
+});
+test('ten hostile replacement-token slots retain one copy of each prose/block and bounded output', async () => {
+  await renderHostileAlts(Array.from({ length: 10 }, () => '$` $& $\' $$'));
+});
+
+function binarySource(bytes: Uint8Array, mime: string) {
+  const calls: string[] = []; let time = 0;
+  const client = new RequestClient(async (url) => {
+    calls.push(url);
+    return { url, status: 200, bodyUsed: true, headers: { get: (name) => name === 'content-type' ? mime : null },
+      text: async () => '', arrayBuffer: async () => new Uint8Array(bytes).buffer };
+  }, { now: () => time, sleep: async (ms) => { time += ms; } });
+  return { calls, client };
+}
+test.each([
+  ['invalid-bytes', png().slice(0, -1), 'image/png'], ['content-type-mismatch', png(), 'text/html'],
+] as const)('rejected %s repair retains historical ownership through cleanup/offline render, then replaces only at valid commit', async (reason, bytes, mime) => {
+  const chapter = await seed(markup(), true), locator = await repo.getLocator(chapterId); await run();
+  const prior = (await repo.listChapterImages(chapterId))[0]!, ref = prior.file!;
+  let failOnce = true;
+  const unreliable = createSourceImageFiles({ ...files, read: async (path) => {
+    if (path === ref.relativePath && failOnce) { failOnce = false; throw new Error('Original synthetic one-shot read failure.'); }
+    return files.read(path);
+  } }, digest, uuid);
+  const rejected = binarySource(bytes, mime);
+  const result = await downloadImages(id, repo, rejected.client, digest, unreliable);
+  expect(result.failure).toMatchObject({ code: 'storage', message: expect.stringContaining(`Image repair rejected: ${reason}`) });
+  expect(rejected.calls).toEqual([prior.sourceUrl]);
+  expect((await repo.listChapterImages(chapterId))[0]).toEqual(prior);
+  expect(await repo.getImageSummary(id)).toMatchObject({ local: 1, pending: 0, omitted: 0 });
+  await imageFiles.cleanup(() => repo.listSourceAssetReferences());
+  expect(await imageFiles.read(ref)).toEqual(png()); expect(await repo.listSourceAssetReferences()).toContain(ref.relativePath);
+  const render = createLocalContentFiles(files, digest, async () => { throw new Error('No fixture/source access.'); }, uuid);
+  const directory = await render.render(chapter, locator, { theme: 'dark', fontSize: 24 }, uuid(), null, await repo.listChapterImages(chapterId));
+  expect(await files.read(`${directory}/source-image-0.png`)).toEqual(png());
+  expect(Buffer.from(await files.read(`${directory}/index.html`)).toString()).toContain('Generated before.');
+  expect(rejected.calls).toHaveLength(1); // Offline render performs no repair request.
+
+  failOnce = true;
+  const commit = repo.commitImageResults.bind(repo);
+  const committing = jest.spyOn(repo, 'commitImageResults').mockImplementationOnce(async (...args) => {
+    expect((await repo.listChapterImages(chapterId))[0]).toEqual(prior);
+    expect(files.exists(ref.relativePath)).toBe(true);
+    await imageFiles.cleanup(() => repo.listSourceAssetReferences());
+    expect(files.exists(ref.relativePath)).toBe(true); // Both old SQL ref and active new stage survive.
+    await commit(...args);
+  });
+  const replacement = binarySource(jpeg(), 'image/jpeg');
+  expect((await downloadImages(id, repo, replacement.client, digest, unreliable)).failure).toBeNull();
+  expect(committing).toHaveBeenCalledTimes(1); committing.mockRestore();
+  const next = (await repo.listChapterImages(chapterId))[0]!.file!;
+  expect(next.relativePath).not.toBe(ref.relativePath); expect(next.format).toBe('jpeg');
+  expect(next.digest).not.toBe(ref.digest); expect(await imageFiles.read(next)).toEqual(jpeg());
+  expect(files.exists(ref.relativePath)).toBe(true);
+  expect(await repo.listSourceAssetReferences()).not.toContain(ref.relativePath);
+  expect(await imageFiles.cleanup(() => repo.listSourceAssetReferences())).toBe(1);
+  expect(files.exists(ref.relativePath)).toBe(false); expect(files.exists(next.relativePath)).toBe(true);
+  expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
+});
+test('reference transaction rejects downloaded-to-omitted demotion and rolls back earlier batch changes', async () => {
+  await seed(markup(2), true); await run(); const prior = await repo.listChapterImages(chapterId);
+  const candidate = await imageFiles.stage(jpeg(), 'image/jpeg');
+  try {
+    await expect(repo.commitImageResults(id, chapterId, [{ slot: 0, file: candidate.file }, { slot: 1, reason: 'invalid-bytes' }])).rejects.toThrow('validated replacement');
+  } finally { candidate.release(); }
+  expect(await repo.listChapterImages(chapterId)).toEqual(prior);
+  await imageFiles.cleanup(() => repo.listSourceAssetReferences());
+  for (const image of prior) expect(await imageFiles.read(image.file!)).toEqual(png());
+  expect(files.exists(candidate.file.relativePath)).toBe(false);
+});
+test('completed pending work commits before a later historical repair rejection without demoting the old reference', async () => {
+  const chapter = await seed(markup(2), true), candidate = await imageFiles.stage(png());
+  await repo.commitImageResults(id, chapterId, [{ slot: 1, file: candidate.file }]); candidate.release();
+  const prior = (await repo.listChapterImages(chapterId))[1]!;
+  const unavailable = createSourceImageFiles({ ...files, read: async (path) => {
+    if (path === prior.file!.relativePath) throw new Error('Original synthetic local access failure.');
+    return files.read(path);
+  } }, digest, uuid);
+  const fake = source(), get = fake.client.getImage.bind(fake.client);
+  jest.spyOn(fake.client, 'getImage').mockImplementation(async (...args) => ({ ...await get(...args),
+    contentType: args[0].endsWith('generated-1.png') ? 'text/html' : 'image/png' }));
+  expect((await downloadImages(id, repo, fake.client, digest, unavailable)).failure?.code).toBe('storage');
+  expect((await repo.listChapterImages(chapterId))[1]).toEqual(prior);
+  expect(await repo.getImageSummary(id)).toMatchObject({ local: 2, pending: 0, omitted: 0 });
+  await imageFiles.cleanup(() => repo.listSourceAssetReferences());
+  for (const image of await repo.listChapterImages(chapterId)) expect(await imageFiles.read(image.file!)).toEqual(png());
+  expect(await repo.getChapter(chapterId)).toEqual(chapter);
+});
+test.each(['missing', 'corrupt'])('rejected repair preserves a truly %s historical reference for a later successful explicit retry', async (kind) => {
+  const chapter = await seed(markup(), true), locator = await repo.getLocator(chapterId); await run();
+  const prior = (await repo.listChapterImages(chapterId))[0]!;
+  if (kind === 'missing') files.remove(prior.file!.relativePath); else files.write(prior.file!.relativePath, png().slice(0, 30));
+  const rejected = binarySource(png(), 'image/svg+xml');
+  expect((await run(rejected)).failure?.code).toBe('storage');
+  expect((await repo.listChapterImages(chapterId))[0]).toEqual(prior);
+  const render = createLocalContentFiles(files, digest, async () => { throw new Error('No source request.'); }, uuid);
+  const directory = await render.render(chapter, locator, { theme: 'light', fontSize: 20 }, uuid(), null, [prior]);
+  expect(Buffer.from(await files.read(`${directory}/index.html`)).toString()).toContain('[Local image unavailable:');
+  expect((await run(binarySource(jpeg(), 'image/jpeg'))).failure).toBeNull();
+  const next = (await repo.listChapterImages(chapterId))[0]!.file!;
+  expect(next.relativePath).not.toBe(prior.file!.relativePath); expect(await imageFiles.read(next)).toEqual(jpeg());
+  expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
 });

@@ -62,8 +62,11 @@ export async function downloadChapterImages(storyId: string, chapterId: string, 
         options.onMime?.({ chapterId, slot: image.slot, receivedMime: normalizeImageMime(response.contentType), detectedFormat: staged.file.format, accepted: true });
       } catch (error) {
         if (!(error instanceof ImageRejected)) throw error;
-        changes.push({ slot: image.slot, reason: error.reason });
         if (error.mime) options.onMime?.({ chapterId, slot: image.slot, ...error.mime, accepted: false });
+        if (image.state === 'downloaded') {
+          throw new ImportFailure('storage', `Image repair rejected: ${error.reason}. Previous local reference retained; use Retry Images.`);
+        }
+        changes.push({ slot: image.slot, reason: error.reason });
       }
       completed++;
       if (changes.length >= 8) await flush();

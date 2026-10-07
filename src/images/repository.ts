@@ -81,6 +81,7 @@ export function createImageRepository(db: SqlDatabase, write: ReturnType<typeof 
           cancelled(signal);
           const slot = await tx.getFirstAsync<{ state: string; reason: string | null }>('SELECT state, reason FROM chapter_images WHERE chapter_id = ? AND slot = ?', chapter, change.slot);
           if (!slot || (slot.state === 'omitted' && slot.reason !== 'content-type-mismatch')) throw new Error('Unknown or permanently omitted image slot.');
+          if (slot.state === 'downloaded' && !('file' in change)) throw new Error('A downloaded image reference requires a validated replacement.');
           if ('file' in change) {
             validateImageReference(change.file);
             const file = change.file;

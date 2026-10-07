@@ -45,21 +45,19 @@ async function binaryBytes(response: TransportResponse, signal: AbortSignal): Pr
     if (bytes.length > SOURCE_IMAGE_LIMITS.maxBytes) throw new ImageRejected('over-byte-budget');
     return bytes;
   }
-  const chunks: Uint8Array[] = [];
+  // Retain one bounded buffer, never one object per transport chunk.
   let total = 0;
   try {
+    const bytes = new Uint8Array(SOURCE_IMAGE_LIMITS.maxBytes);
     for (;;) {
       const { done, value } = await abortable(reader.read(), signal);
       if (done) break;
-      if (!value) continue;
+      if (!value?.length) continue;
+      if (value.length > bytes.length - total) throw new ImageRejected('over-byte-budget');
+      bytes.set(value, total);
       total += value.length;
-      if (total > SOURCE_IMAGE_LIMITS.maxBytes) throw new ImageRejected('over-byte-budget');
-      chunks.push(value);
     }
-    const bytes = new Uint8Array(total);
-    let at = 0;
-    for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
-    return bytes;
+    return bytes.slice(0, total);
   } finally {
     try { await reader.cancel(); } finally { reader.releaseLock(); }
   }

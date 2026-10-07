@@ -25,7 +25,7 @@ export async function renderSourceImages(chapter: Chapter, images: ChapterImage[
         replacement = `<img src="${name}" width="${image.file.width}" height="${image.file.height}" alt="${escapeHtml(image.alt || 'Source image')}" />`;
       } catch { replacement = '[Local image unavailable: missing or invalid file. Use Retry Images in Contents.]'; }
     }
-    html = html.replace(placeholder, `<div id="${image.blockId}" data-block="true">${replacement}</div>`);
+    html = html.replace(placeholder, () => `<div id="${image.blockId}" data-block="true">${replacement}</div>`);
   }
   return html;
 }

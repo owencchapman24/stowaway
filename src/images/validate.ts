@@ -30,7 +30,7 @@ function crc32(bytes: Uint8Array): number {
 }
 function png(b: Uint8Array, v: DataView): [number, number] {
   if (b.length < 57) reject();
-  let at = 8, width = 0, height = 0, data = false, endedData = false, palette = false, color = -1, end = false;
+  let at = 8, width = 0, height = 0, data = false, dataBytes = 0, endedData = false, palette = false, color = -1, end = false;
   while (at < b.length) {
     if (at + 12 > b.length) reject();
     const n = v.getUint32(at), name = ascii(b, at + 4, 4);
@@ -49,10 +49,10 @@ function png(b: Uint8Array, v: DataView): [number, number] {
       if (palette || data || !n || n % 3 || n > 768 || color === 0 || color === 4) reject();
       palette = true;
     } else if (name === 'IDAT') {
-      if (endedData || !n || (color === 3 && !palette)) reject();
-      data = true;
+      if (endedData || (color === 3 && !palette)) reject();
+      data = true; dataBytes += n;
     } else if (name === 'IEND') {
-      if (n || !data || at + 12 !== b.length) reject();
+      if (n || !data || !dataBytes || at + 12 !== b.length) reject();
       end = true;
     } else {
       if (data) endedData = true;

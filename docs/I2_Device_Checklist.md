@@ -4,6 +4,8 @@
 
 Real same-origin SpaceBattles images were downloaded, validated, persisted, rendered locally and regenerated while network-disabled on the already-running Expo Go project. Conditional cancellation/destructive/rare live cases remain physically unexercised and retain deterministic/separate S2A evidence. S0/S1/S2A/I0/I1 remain accepted; I0/I1 are merged in PR #4/#5. **S2B remains deferred; full v0 is incomplete. No merge or next product slice is authorized.** See [implementation, maintenance history and validation](I2_Source_Images.md).
 
+Historical acceptance below applies to the tested implementation/fix above. The five-finding post-acceptance correction is described at the end of this checklist; **focused post-fix physical regression remains pending**.
+
 ## A. v3 → v4 migration and preservation — reported passed
 
 - [x] Existing normal Library survived without reset: **Eyes Open (Pokemon Fanfic) 34/34**, **Normal Isn't Ordinary [Pokemon SI] 25/25**, **The Lantern Cartographer 3/3**.
@@ -99,3 +101,17 @@ npm.cmd start
 Use the existing normal phone library and usual SDK 57 Expo Go/Metro setup. Preserve data; do not uninstall/clear/reset/reseed, fabricate mutations or corrupt normal files. Source actions remain deliberate, unauthenticated and personal; stop on blocked/login/challenge results with no cookies, proxy or bypass. Record metadata only, never prose/raw pages/image bytes/screenshots. A legacy scan can fetch current source bodies; ordinary Check for Updates does not perform that scan.
 
 **CORE I2 PHYSICAL ACCEPTANCE PASSED.** Acceptance bookkeeping, validation, a separate commit/push and PR preparation against `main` are authorized. No merge, read/unread, deletion, new image feature, automatic/background image work or S2B work follows from this acceptance; the next product slice remains unauthorized.
+
+## Post-fix physical regression — PENDING
+
+PR #6's adversarial review found replacement-token rendering expansion, rejected historical-repair reference loss, per-chunk memory amplification, encoded utility-route bypass and legal empty-IDAT rejection. All five are corrected by the targeted follow-up. Original core acceptance above is retained; **no new physical pass is recorded**. Deterministic host tests establish the hostile-alt, failed-repair and URL/parser cases, not iPhone/native-wire evidence.
+
+Use the updated branch with the existing SDK 57 Expo Go/Metro setup. Preserve the normal library: no uninstall, reset, reseed, file corruption or deletion of good references.
+
+- [ ] **Existing Aenys local rendering:** confirm **38/38 text** and the prior **57 local / 1 omitted / 0 pending** baseline, open the two previously observed image-bearing chapters, and verify inline images, readable prose, saved-passage restoration, font/theme and Previous/Next/Contents/Library. Leave normally and reopen; record any changed counts or failure message rather than treating a reference count as file-integrity proof.
+- [ ] **Explicit reference reuse:** use Retry Images on existing Aenys. Good local files should be reused, counts retained and no failed-repair message shown. This tests ordinary reuse; it does not simulate a transient local read failure or prove zero network traffic from UI observation. The one existing omission's reason remains unasserted.
+- [ ] **Already-running offline regeneration:** leave the reader normally, disable networking while the Expo Go project stays running, and reopen at least two image-bearing views. Confirm local images/prose, navigation and saved-passage restoration; no Metro-free cold-start/S2B claim follows.
+- [ ] **Actual native stream/cancel/settle/retry:** use a deliberately selected authorized image-bearing story with genuinely pending/retryable images. Start Download/Retry Images, cancel while image downloads are still in progress, and verify controls/gestures remain blocked until settlement. Record retained local/omitted/pending and text counts. Retry explicitly and verify completed local images are retained, pending work progresses and rendering succeeds. If practical, force-quit after settlement, relaunch without automatic image work and retry explicitly. Stop on blocked/login/challenge results. Do not claim a streaming pass if the operation only reuses already-local files.
+- [ ] **Post-operation I1/reader regression:** run a deliberate ordinary Check for Updates and confirm text/image counts, saved passages and reader navigation remain coherent.
+
+**A fresh image-bearing story is needed only if no existing authorized story has actual pending/retryable images.** Aenys with all good 57 local references cannot exercise the changed body reader merely by retrying. Do not clear its files to force downloads. Destructive historical-reference fault injection and hostile-alt/empty-IDAT cases remain deterministic fixture evidence; report native observations separately if suitable synthetic cases become available. No hostile-alt/native-stream/reference-repair physical evidence is claimed by this fix pass. PR #6 must remain open and unmerged.
