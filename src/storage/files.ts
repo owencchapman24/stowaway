@@ -5,6 +5,7 @@ import type { Chapter, Locator, Preferences } from '../domain/types';
 import { assetPath, createLocalContentFiles } from './local-files';
 import { relativeFile, type LocalFiles } from './file-primitives';
 import type { ChapterImage } from '../images/types';
+import { protectRender } from './render-cleanup';
 
 export function nativeFiles(root = Paths.document.uri): LocalFiles {
   const file = (path: string) => new File(root, relativeFile(path));
@@ -38,8 +39,13 @@ export const stageBundledImage = contentFiles.stage;
 
 export async function createRenderFile(chapter: Chapter, locator: Locator | null, preferences: Preferences,
   session: string, reference: string | null, files = nativeFiles(), images: ChapterImage[] = []) {
-  const path = await createLocalContentFiles(files, imageDigest, bundledImage, Crypto.randomUUID)
-    .render(chapter, locator, preferences, session, reference, images);
-  const directory = new Directory(files.root, path);
-  return { uri: new File(directory, 'index.html').uri, readAccess: directory.uri, directory };
+  // Hold protection across generation, promise delivery and the live renderer lifetime.
+  const release = protectRender(files, `reader/${session}`);
+  try {
+    const path = await createLocalContentFiles(files, imageDigest, bundledImage, Crypto.randomUUID)
+      .render(chapter, locator, preferences, session, reference, images);
+    const directory = new Directory(files.root, path);
+    return { uri: new File(directory, 'index.html').uri, readAccess: directory.uri,
+      directory: { get exists() { return directory.exists; }, delete() { try { directory.delete(); } finally { release(); } } } };
+  } catch (error) { release(); throw error; }
 }

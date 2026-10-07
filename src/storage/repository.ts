@@ -7,6 +7,9 @@ import { type SqlDatabase, serializeWrites } from './database';
 import { documentUrl, threadFromUrl } from '../sources/spacebattles/url';
 import { createImageRepository, insertImageSlots } from '../images/repository';
 import type { ImageSlot } from '../images/types';
+import { availableBody } from './availability';
+import { createManagementRepository } from './management';
+import { withLocalStoryWrite } from '../importing/ownership';
 
 interface CompleteManifest {
   state: 'COMPLETE'; entries: { postId: string; title: string; url: string }[];
@@ -50,32 +53,33 @@ export type WriteBoundary = (phase: 'before-write' | 'after-html-write' | 'befor
 export function createRepository(db: SqlDatabase) {
   const write = serializeWrites(db);
   // Historical migration checks can still inspect v3/v4. No completion history
-  // exists there; normal startup migrates to v5 before exposing read-state writes.
+  // exists there; normal startup migrates to v6 before exposing read-state writes.
   async function readColumn() {
     const version = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
     return (version?.user_version ?? 0) >= 5 ? 'e.is_read' : '0';
   }
-  const storySelect = (read: string) => `SELECT s.id, s.source, s.thread_id AS threadId, s.title,
+  const storySelect = (read: string, available: string) => `SELECT s.id, s.source, s.thread_id AS threadId, s.title,
     NULLIF(s.author, '') AS author, s.source_url AS sourceUrl, s.primary_category_id AS categoryId,
     s.last_update_attempt_at AS lastUpdateAttemptAt, s.last_update_success_at AS lastUpdateSuccessAt,
     COUNT(e.post_id) AS total, COUNT(c.id) AS downloaded,
     COALESCE(SUM(e.post_id IS NOT NULL AND ${read} = 0), 0) AS unread FROM stories s
     LEFT JOIN threadmark_entries e ON e.story_id = s.id AND e.currently_listed = 1
-    LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id`;
+    LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id AND (${available})`;
   return {
+    ...createManagementRepository(db, write),
     ...createImageRepository(db, write),
     async listStories(): Promise<StorySummary[]> {
-      return db.getAllAsync(`${storySelect(await readColumn())} GROUP BY s.id ORDER BY s.title, s.id`);
+      return db.getAllAsync(`${storySelect(await readColumn(), await availableBody(db))} GROUP BY s.id ORDER BY s.title, s.id`);
     },
     async getStory(id: string): Promise<StorySummary | null> {
-      return db.getFirstAsync(`${storySelect(await readColumn())} WHERE s.id = ? GROUP BY s.id`, id);
+      return db.getFirstAsync(`${storySelect(await readColumn(), await availableBody(db))} WHERE s.id = ? GROUP BY s.id`, id);
     },
     async listContents(id: string): Promise<StoryContentsEntry[]> {
       const rows = await db.getAllAsync<Omit<StoryContentsEntry, 'downloaded' | 'isRead'> & { downloaded: number; isRead: number }>(
         `SELECT s.id || ':post:' || e.post_id AS id, e.post_id AS postId, e.title, e.position,
           e.source_url AS sourceUrl, c.id IS NOT NULL AS downloaded, ${await readColumn()} AS isRead
          FROM threadmark_entries e JOIN stories s ON s.id = e.story_id
-         LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id
+         LEFT JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id AND (${await availableBody(db)})
          WHERE e.story_id = ? AND e.currently_listed = 1 ORDER BY e.position`, id);
       return rows.map((row) => ({ ...row, downloaded: Boolean(row.downloaded), isRead: Boolean(row.isRead) }));
     },
@@ -83,27 +87,28 @@ export function createRepository(db: SqlDatabase) {
       const rows = await db.getAllAsync<Omit<StoryContentsEntry, 'downloaded' | 'isRead'> & { isRead: number }>(
         `SELECT c.id, e.post_id AS postId, e.title, e.position, e.source_url AS sourceUrl, ${await readColumn()} AS isRead
          FROM threadmark_entries e JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id
-         WHERE e.story_id = ? AND e.currently_listed = 0 ORDER BY e.position, e.post_id`, id);
+         WHERE e.story_id = ? AND e.currently_listed = 0 AND (${await availableBody(db)}) ORDER BY e.position, e.post_id`, id);
       return rows.map((row) => ({ ...row, downloaded: true, isRead: Boolean(row.isRead) }));
     },
     async setEntryRead(story: string, postId: string, isRead: boolean): Promise<void> {
       if (typeof isRead !== 'boolean') throw new Error('Invalid read state.');
-      await write(async (tx) => {
+      await withLocalStoryWrite(story, () => write(async (tx) => {
         if (!await tx.getFirstAsync('SELECT post_id FROM threadmark_entries WHERE story_id = ? AND post_id = ?', story, postId)) {
           throw new Error('Read state requires a stored manifest entry.');
         }
         await tx.runAsync('UPDATE threadmark_entries SET is_read = ? WHERE story_id = ? AND post_id = ? AND is_read != ?',
           Number(isRead), story, postId, Number(isRead));
-      });
+      }));
     },
     async markChapterRead(id: string): Promise<void> {
-      await write(async (tx) => {
+      await withLocalStoryWrite(id.split(':post:')[0]!, () => write(async (tx) => {
         const entry = await tx.getFirstAsync<{ story_id: string; post_id: string }>(`SELECT e.story_id, e.post_id
-          FROM chapters c JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id WHERE c.id = ?`, id);
+          FROM chapters c JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
+          WHERE c.id = ? AND (${await availableBody(tx)})`, id);
         if (!entry) throw new Error('Read state requires a downloaded chapter with a stored manifest entry.');
         await tx.runAsync('UPDATE threadmark_entries SET is_read = 1 WHERE story_id = ? AND post_id = ? AND is_read = 0',
           entry.story_id, entry.post_id);
-      });
+      }));
     },
     async recordUpdateAttempt(id: string, at: number, signal?: AbortSignal): Promise<void> {
       const checkCancelled = () => { if (signal?.aborted) throw new Error('Update attempt cancelled.'); };
@@ -160,7 +165,8 @@ export function createRepository(db: SqlDatabase) {
         await tx.runAsync(`UPDATE stories SET title = ?, author = ?, source_url = ?, primary_category_id = ?,
           last_update_success_at = ? WHERE id = ?`, story.title, author ?? '', story.sourceUrl, story.categoryId, successAt, id);
         const counts = await tx.getFirstAsync<{ downloaded: number }>(`SELECT COUNT(c.id) AS downloaded FROM threadmark_entries e
-          JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id WHERE e.story_id = ? AND e.currently_listed = 1`, id);
+          JOIN chapters c ON c.story_id = e.story_id AND c.post_id = e.post_id
+          WHERE e.story_id = ? AND e.currently_listed = 1 AND (${await availableBody(tx)})`, id);
         result.downloaded = counts?.downloaded ?? 0; result.pending = result.total - result.downloaded;
       }, checkCancelled);
       return result;
@@ -194,12 +200,22 @@ export function createRepository(db: SqlDatabase) {
         const entry = await tx.getFirstAsync<{ title: string; position: number }>(
           'SELECT title, position FROM threadmark_entries WHERE story_id = ? AND post_id = ? AND currently_listed = 1', story, postId);
         if (!entry) throw new Error('Chapter has no committed manifest entry.');
-        if (await tx.getFirstAsync('SELECT id FROM chapters WHERE id = ?', chapterId(story, postId))) return;
+        const availability = await availableBody(tx, 'chapters');
+        if (await tx.getFirstAsync(`SELECT id FROM chapters WHERE id = ? AND (${availability})`, chapterId(story, postId))) return;
         checkCancelled();
-        await tx.runAsync(`INSERT INTO chapters(id, story_id, post_id, title, position, html,
-          content_hash, sanitizer_version, block_ids, links) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT DO NOTHING`, chapterId(story, postId), story, postId, entry.title, entry.position,
+        // v6 can repopulate a retained shell without replacing its identity or locator.
+        const shell = await tx.getFirstAsync('SELECT id FROM chapters WHERE id = ?', chapterId(story, postId));
+        if (shell) {
+          await tx.runAsync(`UPDATE chapters SET title = ?, position = ?, html = ?, content_hash = ?,
+            sanitizer_version = ?, block_ids = ?, links = ?, body_available = 1, image_discovery = 'unknown' WHERE id = ?`,
+          entry.title, entry.position, content.html, content.contentHash, content.sanitizerVersion,
+          JSON.stringify(content.blockIds), JSON.stringify(content.links), chapterId(story, postId));
+        } else {
+          await tx.runAsync(`INSERT INTO chapters(id, story_id, post_id, title, position, html,
+            content_hash, sanitizer_version, block_ids, links) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING`, chapterId(story, postId), story, postId, entry.title, entry.position,
           content.html, content.contentHash, content.sanitizerVersion, JSON.stringify(content.blockIds), JSON.stringify(content.links));
+        }
         if (images) await insertImageSlots(tx, chapterId(story, postId), content, images, signal);
         checkCancelled();
       }, checkCancelled);
@@ -207,7 +223,7 @@ export function createRepository(db: SqlDatabase) {
     async replaceChapterContent(id: string, content: Pick<Chapter, 'html' | 'contentHash' | 'sanitizerVersion' | 'blockIds' | 'links'>,
       boundary?: WriteBoundary): Promise<void> {
       await write(async (tx) => {
-        if (!await tx.getFirstAsync('SELECT id FROM chapters WHERE id = ?', id)) throw new Error('Unknown chapter.');
+        if (!await tx.getFirstAsync(`SELECT id FROM chapters WHERE id = ? AND (${await availableBody(tx, 'chapters')})`, id)) throw new Error('Unknown chapter.');
         await boundary?.('before-write');
         await tx.runAsync('UPDATE chapters SET html = ?, content_hash = ? WHERE id = ?', content.html, content.contentHash, id);
         await boundary?.('after-html-write');
@@ -253,7 +269,7 @@ export function createRepository(db: SqlDatabase) {
       const version = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
       if ((version?.user_version ?? 0) >= 3) {
         return db.getAllAsync(`SELECT c.id, e.title, e.position FROM chapters c JOIN threadmark_entries e
-          ON e.story_id = c.story_id AND e.post_id = c.post_id WHERE e.currently_listed = 1
+          ON e.story_id = c.story_id AND e.post_id = c.post_id WHERE e.currently_listed = 1 AND (${await availableBody(db)})
           ${story ? 'AND c.story_id = ?' : ''} ORDER BY e.position, c.id`, ...(story ? [story] : []));
       }
       // S2A's deliberately isolated v1 has no manifest table.
@@ -261,7 +277,7 @@ export function createRepository(db: SqlDatabase) {
         : db.getAllAsync('SELECT id, title, position FROM chapters ORDER BY position, id');
     },
     async getChapter(id: string): Promise<Chapter | null> {
-      const row = await db.getFirstAsync<ChapterRow>('SELECT * FROM chapters WHERE id = ?', id);
+      const row = await db.getFirstAsync<ChapterRow>(`SELECT * FROM chapters WHERE id = ? AND (${await availableBody(db, 'chapters')})`, id);
       return row && { id: row.id, storyId: row.story_id, title: row.title, position: row.position,
         html: row.html, contentHash: row.content_hash, sanitizerVersion: row.sanitizer_version,
         blockIds: JSON.parse(row.block_ids), links: JSON.parse(row.links) };
@@ -272,14 +288,15 @@ export function createRepository(db: SqlDatabase) {
         offset: row.block_offset, progression: row.progression, expandedSpoilers: JSON.parse(row.expanded_spoilers) };
     },
     async getLastChapter(): Promise<string | null> {
-      const row = await db.getFirstAsync<{ chapter_id: string }>('SELECT chapter_id FROM reading_positions ORDER BY updated_at DESC LIMIT 1');
+      const row = await db.getFirstAsync<{ chapter_id: string }>(`SELECT p.chapter_id FROM reading_positions p
+        JOIN chapters c ON c.id = p.chapter_id WHERE (${await availableBody(db)}) ORDER BY p.updated_at DESC LIMIT 1`);
       return row?.chapter_id ?? null;
     },
     async saveLocator(locator: Locator): Promise<void> {
-      await write(async (tx) => {
+      await withLocalStoryWrite(locator.chapterId.split(':post:')[0]!, () => write(async (tx) => {
         // Stale callbacks must never persist against another content version.
         const chapter = await tx.getFirstAsync<{ content_hash: string; block_ids: string }>(
-          'SELECT content_hash, block_ids FROM chapters WHERE id = ?', locator.chapterId);
+          `SELECT content_hash, block_ids FROM chapters WHERE id = ? AND (${await availableBody(tx, 'chapters')})`, locator.chapterId);
         const blockIds: string[] = chapter ? JSON.parse(chapter.block_ids) : [];
         if (!chapter || chapter.content_hash !== locator.contentHash || !blockIds.includes(locator.blockId) ||
           !Number.isFinite(locator.offset) || locator.offset < 0 || !Number.isFinite(locator.progression) ||
@@ -294,7 +311,7 @@ export function createRepository(db: SqlDatabase) {
           progression = excluded.progression, expanded_spoilers = excluded.expanded_spoilers,
           updated_at = excluded.updated_at`, locator.chapterId, locator.contentHash,
         locator.blockId, locator.offset, locator.progression, JSON.stringify(locator.expandedSpoilers), Date.now());
-      });
+      }));
     },
     async getPreferences(): Promise<Preferences> {
       const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', 'reading');

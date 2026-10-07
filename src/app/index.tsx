@@ -15,7 +15,7 @@ export default function Library() {
     let active = true;
     repository.listStories().then((list) => {
       if (active) { setStories(list); setError(null); }
-    }).catch(() => { if (active) setError('Could not read the local library.'); });
+    }).catch(() => { if (active) setError('Local storage failure: could not read the library. Please reopen and retry.'); });
     return () => { active = false; };
   }, [repository]));
   return <SafeAreaView style={styles.page}><FlatList data={stories} keyExtractor={(story) => story.id}

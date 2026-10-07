@@ -75,10 +75,10 @@ test('populated v4 -> v5 adds only Unread, preserving every field/reference; fai
   await host.db.runAsync(`INSERT INTO chapter_images(chapter_id, slot, block_id, source_url, alt, state, relative_path, format, byte_length, width, height, digest)
     VALUES (?, 0, ?, ?, 'Synthetic', 'downloaded', 'source-assets/22222222-2222-4222-8222-222222222222.png', 'png', 100, 10, 10, 'digest')`, body.id, body.blockIds[0]!, 'https://forums.spacebattles.com/attachments/i3.png');
   const old = await preserved(), entries = await host.db.getAllAsync('SELECT * FROM threadmark_entries ORDER BY story_id, post_id');
-  host.failNextCommit(); await expect(migrate(host.db)).rejects.toThrow('commit failure');
+  host.failNextCommit(); await expect(migrate(host.db, 5)).rejects.toThrow('commit failure');
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 4 });
   expect(await preserved()).toEqual(old); expect(await host.db.getAllAsync('SELECT * FROM threadmark_entries ORDER BY story_id, post_id')).toEqual(entries);
-  await migrate(host.db); await migrate(host.db);
+  await migrate(host.db, 5); await migrate(host.db, 5);
   await host.db.getFirstAsync('SELECT is_read FROM threadmark_entries LIMIT 1'); // Refresh host schema metadata after DDL.
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 5 });
   expect(await preserved()).toEqual(old);
@@ -100,7 +100,7 @@ test.each([0, 1, 2, 3, 4])('fresh/v%s -> latest retains fixture passage/settings
   const positions = await host.db.getAllAsync("SELECT name FROM sqlite_master WHERE name = 'reading_positions'");
   const old = positions.length ? await host.db.getAllAsync('SELECT * FROM reading_positions') : [];
   await migrate(host.db); repo = createRepository(host.db);
-  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 5 });
+  expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 6 });
   expect(await host.db.getAllAsync('SELECT * FROM reading_positions')).toEqual(old);
   expect((await states()).every((e) => (e as { is_read: number }).is_read === 0)).toBe(true);
   if (version) { expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 24 }); expect(await repo.getAssetPath()).toBe(asset.relativePath); expect(await repo.listContents('fixture:thread:1001')).toHaveLength(3); }

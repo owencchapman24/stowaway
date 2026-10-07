@@ -16,11 +16,11 @@ export function ReaderControls({ preferences, disabled, onChange }: {
   </View>;
 }
 
-export function Control({ label, text, disabled = false, onPress }: {
-  label: string; text: string; disabled?: boolean; onPress: () => void;
+export function Control({ label, text, disabled = false, destructive = false, onPress }: {
+  label: string; text: string; disabled?: boolean; destructive?: boolean; onPress: () => void;
 }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }}
-    disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}>
+    disabled={disabled} onPress={onPress} style={[styles.button, destructive && styles.destructive, disabled && styles.disabled]}>
     <Text style={styles.buttonText}>{text}</Text>
   </Pressable>;
 }
@@ -29,6 +29,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 8 },
   button: { backgroundColor: '#244d73', minHeight: 44, minWidth: 44, padding: 10, borderRadius: 5, justifyContent: 'center' },
   buttonText: { color: '#ffffff', textAlign: 'center', fontSize: 16 },
+  destructive: { backgroundColor: '#8b2828' },
   label: { fontSize: 16, color: '#22252a' },
   disabled: { opacity: 0.4 },
 });
