@@ -9,7 +9,7 @@ type BridgeWindow = Window & typeof globalThis & {
 const bridgeWindow = window as BridgeWindow;
 let messages: { type: string; locator?: Locator; linkId?: string }[];
 let y: number;
-let documentListeners: Map<string, EventListenerOrEventListenerObject>;
+let documentListeners: Map<string, EventListenerOrEventListenerObject[]>;
 let cleanups: (() => void)[];
 const locator: Locator = { chapterId: 'chapter', contentHash: 'hash', blockId: 'block-0005',
   offset: 35, progression: 0.3, expandedSpoilers: [] };
@@ -48,7 +48,7 @@ beforeEach(() => {
   }
   const documentAdd = document.addEventListener.bind(document);
   jest.spyOn(document, 'addEventListener').mockImplementation((type, listener, options) => {
-    documentListeners.set(type, listener);
+    documentListeners.set(type, [...documentListeners.get(type) ?? [], listener]);
     documentAdd(type, listener, options);
     cleanups.push(() => document.removeEventListener(type, listener, options));
   });
@@ -67,8 +67,73 @@ function run(saved: Locator | null) {
   jest.runAllTimers();
 }
 function gesture(type: string, event: Partial<Event>) {
-  (documentListeners.get(type) as EventListener)(event as Event);
+  for (const listener of documentListeners.get(type) ?? []) (listener as EventListener)({ type, ...event } as Event);
 }
+
+function readingGesture(type = 'touchmove', trusted = true, target: EventTarget = document.getElementById('block-0001')!) {
+  gesture(type, { isTrusted: trusted, target, preventDefault: jest.fn() });
+}
+const completions = () => messages.filter((message) => message.type === 'read-end');
+
+test('opening/restoring at bottom and background/pagehide/flush alone never complete a chapter', () => {
+  run({ ...locator, contentHash: 'old', progression: 1 });
+  expect(y).toBe(800); bridgeWindow.StowawayReader.flush(); window.dispatchEvent(new Event('pagehide'));
+  expect(completions()).toEqual([]);
+});
+test('restyle/programmatic restore to bottom resets the scrolling gesture without completing', () => {
+  run(null); readingGesture(); window.scrollTo(0, 600);
+  bridgeWindow.StowawayReader.restyle(14, 'light'); jest.runAllTimers();
+  window.scrollTo(0, 500); jest.runAllTimers();
+  expect(completions()).toEqual([]);
+});
+test('trusted scrolling input to live end emits exactly once, even after reflow and repeated bottom scrolling', () => {
+  run(null); readingGesture(); window.scrollTo(0, 790); jest.runAllTimers();
+  expect(completions()).toEqual([{ type: 'read-end', session: 'session', chapterId: 'chapter', contentHash: 'hash' }]);
+  readingGesture(); window.scrollTo(0, 800); bridgeWindow.StowawayReader.restyle(20, 'dark'); jest.runAllTimers();
+  readingGesture('touchend'); expect(completions()).toHaveLength(1);
+});
+test('ordinary programmatic scroll after a trusted pointerdown cannot complete', () => {
+  run(null); readingGesture('pointerdown'); window.scrollTo(0, 800); jest.runAllTimers();
+  expect(completions()).toEqual([]);
+});
+test('untrusted synthetic input and scroll cannot complete', () => {
+  run(null); readingGesture('touchmove', false); window.scrollTo(0, 800); readingGesture('touchend', false);
+  expect(completions()).toEqual([]);
+});
+test('user engagement away from the end does not complete, and an expired gesture cannot authorize later layout scrolls', () => {
+  run(null); readingGesture(); window.scrollTo(0, 300); expect(completions()).toEqual([]);
+  jest.advanceTimersByTime(1201); window.scrollTo(0, 800); expect(completions()).toEqual([]);
+});
+test.each(['load', 'error'])('image %s/geometry alone invalidates prior scrolling input and never completes', (event) => {
+  const image = document.createElement('img'); document.getElementById('chapter')!.append(image);
+  let height = 1000;
+  Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, get: () => height });
+  run(null); readingGesture(); window.scrollTo(0, 600);
+  height = 800; image.dispatchEvent(new Event(event)); window.dispatchEvent(new Event('scroll'));
+  expect(completions()).toEqual([]);
+  readingGesture('touchend'); expect(completions()).toHaveLength(1);
+});
+test('geometry change alone rejects a still-recent gesture even without an image event', () => {
+  run(null); readingGesture(); window.scrollTo(0, 600);
+  Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 800 });
+  window.dispatchEvent(new Event('scroll')); expect(completions()).toEqual([]);
+});
+test('a no-scroll chapter stays Unread on open, then trusted text interaction can complete', () => {
+  Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 150 });
+  run(null); expect(completions()).toEqual([]);
+  readingGesture('touchend'); expect(completions()).toHaveLength(1);
+});
+test('restored end requires fresh trusted interaction; safe links and spoilers remain separate actions', () => {
+  run({ ...locator, contentHash: 'old', progression: 1 }); expect(completions()).toEqual([]);
+  readingGesture('click', true, document.querySelector('summary')!); expect(completions()).toEqual([]);
+  readingGesture('click', true, document.querySelector('a')!); expect(messages.filter((m) => m.type === 'link')).toHaveLength(1);
+  expect(completions()).toEqual([]); readingGesture('touchend'); expect(completions()).toHaveLength(1);
+});
+test('interaction while restoration is not ready and outside chapter content cannot complete', () => {
+  new Function('CONFIG', POSITION_BRIDGE)({ session: 'session', chapterId: 'chapter', contentHash: 'hash', locator: { ...locator, contentHash: 'old', progression: 1 } });
+  readingGesture('touchend'); expect(completions()).toEqual([]); jest.runAllTimers();
+  readingGesture('touchend', true, document.body); expect(completions()).toEqual([]);
+});
 
 test.each([false, true])('same-hash restoration retains logical image block identity with local image available=%s', (available) => {
   const target = document.getElementById('block-0005')!;

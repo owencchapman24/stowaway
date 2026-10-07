@@ -27,6 +27,7 @@ function Contents({ id }: { id: string }) {
   const [story, setStory] = useState<StorySummary | null>(null);
   const [entries, setEntries] = useState<StoryContentsEntry[]>([]);
   const [saved, setSaved] = useState<StoryContentsEntry[]>([]);
+  const displayedEntries = useRef<StoryContentsEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [outcome, setOutcome] = useState<UpdateResult | null>(null);
@@ -35,9 +36,12 @@ function Contents({ id }: { id: string }) {
   const [imageOutcome, setImageOutcome] = useState<ImageResult | null>(null);
   const [operation, setOperation] = useState<'update' | 'images' | null>(null);
   const [running, setRunning] = useState(false);
+  const [savingRead, setSavingRead] = useState(false);
+  const readWrite = useRef<object | null>(null);
+  const busy = running || savingRead;
   const abort = useRef<AbortController | null>(null);
   // Cancellation does not settle a transaction whose COMMIT is already underway.
-  usePreventRemove(running, () => {});
+  usePreventRemove(busy, () => {});
   const focused = useRef(false);
   const focusVersion = useRef(0);
   const readVersion = useRef(0);
@@ -49,12 +53,14 @@ function Contents({ id }: { id: string }) {
         repository.getImageSummary(id),
       ]);
       if (focused.current && version === readVersion.current) {
+        displayedEntries.current = [...current, ...unlisted];
         setStory(next); setEntries(current); setSaved(unlisted); setImageSummary(images);
         setError(next ? null : 'Story is not in the local library.');
         return 'applied' as const;
       }
     } catch {
       if (focused.current && version === readVersion.current) {
+        displayedEntries.current = [];
         setStory(null); setEntries([]); setSaved([]); setImageSummary(null);
         setError('storage: Could not read local story contents.');
         return 'failed' as const;
@@ -65,6 +71,7 @@ function Contents({ id }: { id: string }) {
   useFocusEffect(useCallback(() => {
     focused.current = true;
     setRunning(!!abort.current); setProgress(null); setOutcome(null); setImageProgress(null); setImageOutcome(null);
+    setSavingRead(!!readWrite.current);
     void refresh();
     return () => { focused.current = false; focusVersion.current++; readVersion.current++; abort.current?.abort(); };
   }, [refresh]));
@@ -74,7 +81,7 @@ function Contents({ id }: { id: string }) {
   }, []);
 
   async function runOperation(images = false) {
-    if (!focused.current || abort.current || story?.id !== id || story.source !== 'spacebattles') return;
+    if (!focused.current || abort.current || readWrite.current || story?.id !== id || story.source !== 'spacebattles') return;
     const controller = new AbortController(); abort.current = controller;
     const focus = focusVersion.current;
     readVersion.current++;
@@ -108,6 +115,29 @@ function Contents({ id }: { id: string }) {
       }
     }
   }
+  async function toggleRead(entry: StoryContentsEntry) {
+    if (!focused.current || abort.current || readWrite.current || story?.id !== id) return;
+    // Resolve the latest displayed entry, including for handlers retained across refreshes.
+    const current = displayedEntries.current.find((row) => row.postId === entry.postId);
+    if (!current) return;
+    const token = {}; readWrite.current = token;
+    readVersion.current++; setSavingRead(true); setError(null);
+    let failed = false;
+    // Preserve the action's explicit intent: a retained Mark Read stays idempotent.
+    try { await repository.setEntryRead(id, current.postId, !entry.isRead); }
+    catch { failed = true; }
+    finally {
+      if (readWrite.current === token) {
+        let refreshed: Awaited<ReturnType<typeof refresh>> = 'stale';
+        while (focused.current && refreshed === 'stale') refreshed = await refresh();
+        if (focused.current && failed && refreshed === 'applied') {
+          setError('storage: Could not change Read/Unread state. The previous state is retained; please retry.');
+        }
+        readWrite.current = null;
+        if (focused.current) setSavingRead(false);
+      }
+    }
+  }
   const status = progress ? {
     validating: 'Starting manual update check', manifest: `Checking complete primary manifest: ${progress.total} entries discovered`,
     saving: 'Saving complete primary manifest', reconciling: 'Reconciling complete primary manifest',
@@ -124,27 +154,29 @@ function Contents({ id }: { id: string }) {
   const imageAction = imageSummary?.local || imageSummary?.mimeRetryable ? 'Retry Images' : 'Download Images';
   const rows = [...entries.map((entry) => ({ ...entry, saved: false })), ...saved.map((entry) => ({ ...entry, saved: true }))];
   return <SafeAreaView style={styles.page}>
-    <Stack.Screen options={{ gestureEnabled: !running }} />
+    <Stack.Screen options={{ gestureEnabled: !busy }} />
     <FlatList data={rows} keyExtractor={(entry) => entry.id}
     contentContainerStyle={styles.content} ListHeaderComponent={<View style={styles.section}>
-      <Control label="Return to Library" text="Library" disabled={running}
-        onPress={() => { if (!abort.current) router.replace('/'); }} />
+      <Control label="Return to Library" text="Library" disabled={busy}
+        onPress={() => { if (!abort.current && !readWrite.current) router.replace('/'); }} />
       <Text accessibilityRole="header" style={styles.heading}>{story?.title ?? 'Story contents'}</Text>
       {story && <><Text>{story.author ?? 'Author unavailable'}</Text>
         <Text>{story.downloaded} / {story.total} text chapters downloaded</Text>
+        <Text>{story.unread} unread</Text>
         {story.source === 'spacebattles' && <>
           <Text>Text and images have separate download states. Only primary Threadmarks are included.</Text>
           {imageSummary && <Text>{describeImages(imageSummary)}</Text>}
           {!!imageSummary && (imageSummary.unknown > 0 || imageSummary.pending > 0 || imageSummary.local > 0 || !!imageSummary.mimeRetryable) &&
-            <Control label={imageAction} text={imageAction} disabled={running} onPress={() => { void runOperation(true); }} />}
-          <Control label="Check for Updates" text="Check for Updates" disabled={running} onPress={() => { void runOperation(); }} />
+            <Control label={imageAction} text={imageAction} disabled={busy} onPress={() => { void runOperation(true); }} />}
+          <Control label="Check for Updates" text="Check for Updates" disabled={busy} onPress={() => { void runOperation(); }} />
           {story.lastUpdateAttemptAt !== null && <Text>Last update attempt: {new Date(story.lastUpdateAttemptAt).toLocaleString()}</Text>}
           {story.lastUpdateSuccessAt !== null && <Text>Last complete check: {new Date(story.lastUpdateSuccessAt).toLocaleString()}</Text>}
         </>}
         {!!story.sourceUrl && <Control label="Open story source in browser" text="View source"
           onPress={() => { void Linking.openURL(story.sourceUrl).catch(() => setError('Could not open the source in your browser.')); }} />}
-        {story.source === 'spacebattles' && story.downloaded < story.total && <Control label="Resume Download" text="Resume Download" disabled={running}
-          onPress={() => { if (!abort.current) router.push({ pathname: '/add-story', params: { story: id } }); }} />}</>}
+        {story.source === 'spacebattles' && story.downloaded < story.total && <Control label="Resume Download" text="Resume Download" disabled={busy}
+          onPress={() => { if (!abort.current && !readWrite.current) router.push({ pathname: '/add-story', params: { story: id } }); }} />}</>}
+      {savingRead && <Text accessibilityLiveRegion="polite">Saving Read/Unread state locally…</Text>}
       {running && <Control label={operation === 'images' ? 'Cancel images' : 'Cancel update'} text="Cancel" onPress={() => abort.current?.abort()} />}
       {status && <Text accessibilityLiveRegion="polite">{status}</Text>}
       {outcome && <Text accessibilityLiveRegion="polite">{describeUpdate(outcome)}</Text>}
@@ -158,9 +190,12 @@ function Contents({ id }: { id: string }) {
       <Text accessibilityRole="header">Primary Threadmarks</Text>
     </View>} renderItem={({ item }) => <View style={styles.section}>
       {item.saved && item.id === saved[0]?.id && <Text accessibilityRole="header">Saved chapters no longer listed</Text>}
-      <Control label={`Read ${item.title}`} text={item.saved ? item.title : `${item.position + 1}. ${item.title}`} disabled={running || !item.downloaded}
-        onPress={() => { if (item.downloaded && !abort.current) router.push({ pathname: '/reader', params: { chapter: item.id } }); }} />
+      <Control label={`Read ${item.title}`} text={item.saved ? item.title : `${item.position + 1}. ${item.title}`} disabled={busy || !item.downloaded}
+        onPress={() => { if (item.downloaded && !abort.current && !readWrite.current) router.push({ pathname: '/reader', params: { chapter: item.id } }); }} />
       <Text>{item.downloaded ? 'Text downloaded' : 'Not downloaded'}</Text>
+      <Text>{item.isRead ? 'Read' : 'Unread'}</Text>
+      <Control label={`Mark ${item.title} as ${item.isRead ? 'unread' : 'read'}`} text={item.isRead ? 'Mark Unread' : 'Mark Read'}
+        disabled={busy} onPress={() => { void toggleRead(item); }} />
       {__DEV__ && <Text selectable>Post ID: {item.postId}</Text>}
     </View>} /></SafeAreaView>;
 }

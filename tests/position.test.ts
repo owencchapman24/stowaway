@@ -77,3 +77,15 @@ test('validates identity, session, version, message shape, block IDs and finite 
   expect(parseMessage('not JSON', chapter, identity.session)).toBeNull();
   expect(parseMessage('x'.repeat(16_001), chapter, identity.session)).toBeNull();
 });
+
+test.each([
+  { session: 'other' }, { chapterId: 'other' }, { contentHash: 'other' }, { type: 'read-end-forged' },
+  { locator }, { progression: 1 }, { session: null }, { chapterId: 1 }, { contentHash: null },
+])('read-end rejects mismatched identity/types and extra fields: %j', (override) => {
+  expect(parseMessage(JSON.stringify({ ...identity, type: 'read-end', ...override }), chapter, identity.session)).toBeNull();
+});
+test('read-end accepts only the exact four-field current identity, under the existing 16KB cap', () => {
+  const message = { ...identity, type: 'read-end' };
+  expect(parseMessage(JSON.stringify(message), chapter, identity.session)).toEqual(message);
+  expect(parseMessage(JSON.stringify({ ...message, extra: 'x'.repeat(16_000) }), chapter, identity.session)).toBeNull();
+});

@@ -1,7 +1,7 @@
 import { exclusiveTransaction, type SqlDatabase } from './database';
 
-// S2A deliberately keeps its existing diagnostic schema; normal storage uses v4.
-export async function migrate(db: SqlDatabase, supportedVersion = 4): Promise<void> {
+// S2A deliberately keeps its existing diagnostic schema; normal storage uses v5.
+export async function migrate(db: SqlDatabase, supportedVersion = 5): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
   await exclusiveTransaction(db, async (tx) => {
     const version = await tx.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -80,6 +80,11 @@ export async function migrate(db: SqlDatabase, supportedVersion = 4): Promise<vo
           AND byte_length IS NULL AND width IS NULL AND height IS NULL AND digest IS NULL))
       );
       PRAGMA user_version = 4;
+    `);
+    if (supportedVersion >= 5 && (version?.user_version ?? 0) < 5) await tx.execAsync(`
+      ALTER TABLE threadmark_entries ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0
+        CHECK(is_read IN (0, 1));
+      PRAGMA user_version = 5;
     `);
   });
 }

@@ -10,12 +10,14 @@ import { createRenderFile } from '../storage/files';
 import { Control, ReaderControls } from '../reader/controls';
 import { PositionSession, parseMessage } from '../reader/position';
 import { allowReaderNavigation } from '../reader/navigation';
+import { ReadEndSession } from './read-state';
 
 interface ReaderModel {
   chapter: Chapter;
   session: string;
   file: Awaited<ReturnType<typeof createRenderFile>>;
   positions: PositionSession;
+  readEnd: ReadEndSession | null;
 }
 
 export interface ChapterReaderProps {
@@ -27,9 +29,10 @@ export interface ChapterReaderProps {
   onNavigate(destination: string | null, storyId?: string): void;
   renderFile?: typeof createRenderFile;
   retainRenderFiles?: boolean;
+  onReachedEnd?(chapterId: string): Promise<void>;
 }
 export function ChapterReader({ chapterId, repository, preferences, changePreferences, onRetry, onNavigate,
-  renderFile = createRenderFile, retainRenderFiles = false }: ChapterReaderProps) {
+  renderFile = createRenderFile, retainRenderFiles = false, onReachedEnd }: ChapterReaderProps) {
   const preferencesRef = useRef(preferences);
   useEffect(() => { preferencesRef.current = preferences; }, [preferences]);
   const web = useRef<WebView>(null);
@@ -54,7 +57,10 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       const positions = new PositionSession(repository.saveLocator, () => {
         if (active) setError('Could not save the latest position. The previous saved passage is retained.');
       });
-      loaded = { chapter, session, file, positions };
+      const readEnd = onReachedEnd ? new ReadEndSession(() => onReachedEnd(chapter.id), () => {
+        if (active) setError('Could not save Read state locally. The previous state is retained. Retry leaving to save again.');
+      }) : null;
+      loaded = { chapter, session, file, positions, readEnd };
       if (!active) { positions.dispose(); if (!retainRenderFiles) file.directory.delete(); return; }
       modelRef.current = loaded;
       setChapters(list);
@@ -69,13 +75,19 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       try { if (!retainRenderFiles && loaded?.file.directory.exists) loaded.file.directory.delete(); }
       catch { /* Disposable render files may be left until the next app-data cleanup. */ }
     };
-  }, [chapterId, repository, renderFile, retainRenderFiles]);
+  }, [chapterId, repository, renderFile, retainRenderFiles, onReachedEnd]);
 
   const flushForExit = useCallback(async (): Promise<void> => {
     const current = modelRef.current;
     if (!current) return;
+    const saveProgress = async () => {
+      // Settle both independently: failure of Read state cannot discard a locator.
+      const [position, read] = await Promise.allSettled([current.positions.flush(), current.readEnd?.flush()]);
+      if (read.status === 'rejected') throw new Error('Could not save Read state locally. Please retry leaving.');
+      if (position.status === 'rejected') throw new Error('Could not save your position before leaving. Please retry.');
+    };
     // Persist already received samples even if the WebView is about to suspend.
-    await current.positions.flush();
+    await saveProgress();
     if (!web.current) return;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
@@ -85,7 +97,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       flushAcknowledgement.current = () => { clearTimeout(timer); resolve(); };
       web.current?.injectJavaScript('window.StowawayReader && window.StowawayReader.flush(); true;');
     });
-    await current.positions.flush();
+    await saveProgress();
   }, []);
 
   useEffect(() => {
@@ -103,9 +115,9 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     try {
       await flushForExit();
       onNavigate(destination, modelRef.current?.chapter.storyId);
-    } catch {
+    } catch (failure) {
       exiting.current = false;
-      setError('Could not save before leaving. Please retry.');
+      setError(failure instanceof Error ? failure.message : 'Could not save before leaving. Please retry.');
     }
   }
 
@@ -130,6 +142,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     const message = parseMessage(raw, current.chapter, current.session);
     if (!message) return;
     current.positions.receive(message);
+    current.readEnd?.receive(message);
     if (message.type === 'ready') setReady(true);
     if (message.type === 'layout-start') setReady(false);
     if (message.type === 'flushed') flushAcknowledgement.current?.();

@@ -18,6 +18,7 @@ import { updateStory } from '../../src/importing/import-story';
 import { RequestClient } from '../../src/sources/spacebattles/request';
 import type { StoryMetadata } from '../../src/domain/types';
 import { hostSqlite } from './host-sqlite';
+import * as Crypto from 'expo-crypto';
 import { importRootUrl, storyHeader } from '../fixtures/import';
 import { index, indexUrl, page, row, tabs } from '../fixtures/spacebattles';
 
@@ -51,6 +52,7 @@ let host: ReturnType<typeof hostSqlite>;
 let repo: ReturnType<typeof createRepository>;
 beforeEach(async () => {
   jest.useFakeTimers(); jest.clearAllMocks(); jest.mocked(updateNativeStory).mockReset();
+  jest.spyOn(Crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
   folder = mkdtempSync(join(tmpdir(), 'stowaway-i1-handoff-'));
   host = hostSqlite(join(folder, 'test.db')); await migrate(host.db); repo = createRepository(host.db);
   await repo.commitInitialManifest(metadata, { state: 'COMPLETE', entries: posts.map((postId) => ({ postId,
