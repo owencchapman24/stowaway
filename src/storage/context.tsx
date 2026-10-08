@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { DEFAULT_PREFERENCES, type Preferences } from '../domain/types';
 import { Control } from '../reader/controls';
+import { useTheme } from '../ui/theme';
 import { openStorage } from './native';
 import type { Repository } from './repository';
 
@@ -14,6 +15,7 @@ interface StorageContext {
 const Context = createContext<StorageContext | null>(null);
 
 export function StorageProvider({ children }: { children: ReactNode }) {
+  const theme = useTheme();
   const [storage, setStorage] = useState<Awaited<ReturnType<typeof openStorage>> | null>(null);
   const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +28,9 @@ export function StorageProvider({ children }: { children: ReactNode }) {
     }).catch(() => { if (active) setError('Local storage could not open. Your data has not been reset.'); });
     return () => { active = false; };
   }, [attempt]);
-  if (!storage) return <View style={styles.status}>
-    {error ? <><Text accessibilityRole="alert">{error}</Text><Control label="Retry opening local storage" text="Retry" onPress={() => { setError(null); setAttempt(attempt + 1); }} /></>
-      : <><ActivityIndicator /><Text>Opening local library…</Text></>}
+  if (!storage) return <View style={[styles.status, { backgroundColor: theme.canvas }]}>
+    {error ? <><Text style={{ color: theme.textPrimary }} accessibilityRole="alert">{error}</Text><Control label="Retry opening local storage" text="Retry" onPress={() => { setError(null); setAttempt(attempt + 1); }} /></>
+      : <><ActivityIndicator color={theme.accent} /><Text style={{ color: theme.textPrimary }}>Opening local library…</Text></>}
   </View>;
   return <Context.Provider value={{ ...storage, preferences, changePreferences: async (value) => {
     await storage.repository.savePreferences(value);

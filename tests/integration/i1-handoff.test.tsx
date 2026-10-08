@@ -154,7 +154,7 @@ test.each(['removal', 'rename', 'reorder', 'rollback', 'unchanged'] as const)(
     expect(jest.mocked(Stack.Screen).mock.calls.at(-1)![0].options).toMatchObject({ gestureEnabled: true });
     if (kind === 'removal') {
       expect(screen.getByText('Saved chapters no longer listed')).toBeTruthy();
-      expect(screen.getByText('2 / 2 text chapters downloaded')).toBeTruthy();
+      expect(screen.getByText('2 chapters · 2 unread')).toBeTruthy();
     }
     if (kind === 'rollback') {
       expect((await repo.listContents(id)).map((entry) => entry.postId)).toEqual(posts);

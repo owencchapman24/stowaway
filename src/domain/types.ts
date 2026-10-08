@@ -64,3 +64,8 @@ export interface ReconciliationResult {
   downloaded: number;
   pending: number;
 }
+
+/** A saved passage with an available local body; never inferred from Read state. */
+export interface ContinueReadingTarget {
+  storyId: string; storyTitle: string; chapterId: string; chapterTitle: string; currentlyListed: boolean;
+}

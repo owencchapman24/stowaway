@@ -17,10 +17,14 @@ import { compileFixture, createRepository } from '../../src/storage/repository';
 import { prepareContent } from '../../src/content/sanitize';
 import { importNativeStory, updateNativeStory } from '../../src/importing/native';
 import { downloadNativeImages } from '../../src/images/native';
-import { ImportFailure, acquireStory } from '../../src/importing/ownership';
+import { ImportFailure, acquireStory, isStoryBusy } from '../../src/importing/ownership';
 import { S1Failure } from '../../src/sources/spacebattles/types';
-import { Control } from '../../src/reader/controls';
+import { retainedPress } from '../ui-helpers';
 import { hostSqlite } from './host-sqlite';
+import { importStory } from '../../src/importing/import-story';
+import { RequestClient } from '../../src/sources/spacebattles/request';
+import { page } from '../fixtures/spacebattles';
+import { bodyArticle } from '../fixtures/import';
 import type { StoryMetadata } from '../../src/domain/types';
 
 let mockBlur: () => void, mockRefocus: () => void;
@@ -68,7 +72,7 @@ afterEach(async () => {
 });
 const downloadLabel = 'Remove downloads for Generated A', storyLabel = 'Remove story Generated A and all local state';
 async function ready() { const view = render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText(downloadLabel)).toBeTruthy()); return view; }
-function handler(label: string): () => void { return screen.UNSAFE_getAllByType(Control).find((control) => control.props.label === label)!.props.onPress; }
+function handler(label: string): () => void { return retainedPress(label); }
 function confirmation(text: string) { const call = jest.mocked(Alert.alert).mock.calls.at(-1)!; const button = call[2]!.find((button) => button.text === text)!; expect(button).toBeTruthy(); act(() => button.onPress?.()); }
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
 
@@ -85,7 +89,7 @@ test('confirmed downloads removal refreshes actual SQLite availability/counts wi
   act(() => { remove(); remove(); read(); update(); resume(); library(); }); expect(alert).toHaveBeenCalledTimes(1); expect(router.push).not.toHaveBeenCalled(); expect(router.replace).not.toHaveBeenCalled();
   const confirm = alert.mock.calls[0]![2]!.find((button) => button.text === 'Remove Downloads')!.onPress!;
   act(() => { confirm(); confirm(); }); await waitFor(() => expect(screen.getByText(/^Downloads removed\./)).toBeTruthy());
-  expect(manageNativeStory).toHaveBeenCalledTimes(1); expect(screen.getByText('0 / 2 text chapters downloaded')).toBeTruthy(); expect(screen.getByText('1 unread')).toBeTruthy();
+  expect(manageNativeStory).toHaveBeenCalledTimes(1); expect(screen.getByText('0 of 2 downloaded · 1 unread')).toBeTruthy(); expect(screen.getByText(/· 1 unread$/)).toBeTruthy();
   expect(screen.getByLabelText('Read First')).toBeDisabled(); expect(screen.getByLabelText('Mark First as unread')).toBeEnabled(); expect(screen.getByLabelText('Resume Download')).toBeEnabled();
   expect(updateNativeStory).not.toHaveBeenCalled(); expect(importNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();
 });
@@ -134,7 +138,7 @@ test('management blocks navigation through actual commit settlement and final au
   expect(screen.getByLabelText('Return to Library')).toBeDisabled(); expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(true);
   await expect(repo.manageStory(metadata, 'story', { cleanup: async () => {} })).rejects.toMatchObject({ code: 'busy' });
   act(() => { handler('Return to Library')(); handler('Resume Download')(); }); expect(router.push).not.toHaveBeenCalled(); expect(router.replace).not.toHaveBeenCalled();
-  await act(async () => reading.release()); await waitFor(() => expect(screen.getByLabelText('Return to Library')).toBeEnabled()); expect(screen.getByText('0 / 2 text chapters downloaded')).toBeTruthy(); spy.mockRestore();
+  await act(async () => reading.release()); await waitFor(() => expect(screen.getByLabelText('Return to Library')).toBeEnabled()); expect(screen.getByText('0 of 2 downloaded · 1 unread')).toBeTruthy(); spy.mockRestore();
 });
 
 test.each(['update', 'images', 'read'] as const)('%s operations block retained destructive handlers until authoritative refresh', async (kind) => {
@@ -175,14 +179,14 @@ test.each(failureCases)('Contents presents typed %s failure with an actionable c
   const failure = code === 'storage' ? new ImportFailure('storage', 'Synthetic local failure') : new S1Failure(code, 'Synthetic source failure');
   jest.mocked(updateNativeStory).mockResolvedValue({ story: await repo.getStory(id), failure, reconciliation: null, bodiesDownloaded: 0 });
   await ready(); fireEvent.press(screen.getByLabelText('Check for Updates')); await waitFor(() => expect(screen.getByText(explanation)).toBeTruthy());
-  expect(screen.queryByText('Up to date.')).toBeNull(); expect(screen.getByText('1 / 2 text chapters downloaded')).toBeTruthy(); expect(screen.getByLabelText('Read First')).toBeEnabled();
+  expect(screen.queryByText('Up to date.')).toBeNull(); expect(screen.getByText('1 of 2 downloaded · 1 unread')).toBeTruthy(); expect(screen.getByLabelText('Read First')).toBeEnabled();
 });
 
 test.each(failureCases)('Add Story presents typed %s failure without claiming an empty/successful story', async (code, explanation) => {
   const failure = code === 'storage' ? new ImportFailure('storage', 'Synthetic local failure') : new S1Failure(code, 'Synthetic source failure');
   jest.mocked(importNativeStory).mockResolvedValue({ story: null, failure }); jest.mocked(useLocalSearchParams).mockReturnValue({});
   render(<AddStory />); fireEvent.changeText(screen.getByLabelText('Public SpaceBattles thread URL'), metadata.sourceUrl); fireEvent.press(screen.getByLabelText('Import story'));
-  await waitFor(() => expect(screen.getByText(explanation)).toBeTruthy()); expect(screen.queryByText('Completed. All primary text downloaded.')).toBeNull();
+  await waitFor(() => expect(screen.getByText(explanation)).toBeTruthy()); expect(screen.queryByText('All primary text downloaded.')).toBeNull();
 });
 
 test('busy repository refusal is local and leaves downloads usable', async () => {
@@ -190,7 +194,7 @@ test('busy repository refusal is local and leaves downloads usable', async () =>
   try {
     confirmation('Remove Downloads'); await waitFor(() => expect(screen.getByText(/already has an import, update/)).toBeTruthy());
     expect(await repo.getChapter(`${id}:post:101`)).not.toBeNull();
-  } finally { act(release); }
+  } finally { await act(async () => release()); }
 });
 
 test('operation owned by another handle disables management/navigation/read controls and retained handlers without blocking another story', async () => {
@@ -201,5 +205,76 @@ test('operation owned by another handle disables management/navigation/read cont
   expect(screen.getByLabelText('Mark First as unread')).toBeDisabled(); expect(screen.getByLabelText('Return to Library')).toBeDisabled();
   act(() => { remove(); navigate(); }); expect(alert).not.toHaveBeenCalled(); expect(router.replace).not.toHaveBeenCalled();
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: otherId }); view.rerender(<StoryContents />);
-  await waitFor(() => expect(screen.getByLabelText('Remove downloads for Generated B')).toBeEnabled()); act(release);
+  await waitFor(() => expect(screen.getByLabelText('Remove downloads for Generated B')).toBeEnabled()); await act(async () => release());
+});
+
+test.each(['downloads', 'story'] as const)('UI D4: %s COMMIT-then-reject presents the authoritative removed state', async (action) => {
+  await ready(); const transaction = host.db.withExclusiveTransactionAsync;
+  host.db.withExclusiveTransactionAsync = async (work) => { await transaction(work); throw new Error('Driver closed after commit'); };
+  fireEvent.press(screen.getByLabelText(action === 'downloads' ? downloadLabel : storyLabel));
+  if (action === 'story') confirmation('Continue'); confirmation(action === 'downloads' ? 'Remove Downloads' : 'Remove Story');
+  await waitFor(() => expect(screen.getByText(action === 'downloads' ? /^Downloads removed\./ : /^Story removed from this device/)).toBeTruthy());
+  expect(screen.queryByText(REMOVAL_ROLLBACK)).toBeNull(); expect(await repo.getChapter(id + ':post:101')).toBeNull();
+  if (action === 'downloads') { expect(screen.getByLabelText('Resume Download')).toBeEnabled(); expect(screen.getByLabelText('Read First')).toBeDisabled(); }
+  else expect(screen.queryByLabelText('Read First')).toBeNull();
+});
+
+test('UI D1: held real Resume COMMIT refreshes focused foreign Contents before restoring controls', async () => {
+  await repo.manageStory(metadata, 'downloads', { cleanup: async () => {} });
+  const transaction = host.db.withExclusiveTransactionAsync, commit = gate(), entered = gate(), refreshed = gate(), finishRead = gate();
+  host.db.withExclusiveTransactionAsync = (work) => transaction(async (tx) => { await work(tx); entered.release(); await commit.promise; });
+  let time = 0;
+  const client = new RequestClient(async (url) => ({ url, status: 200, bodyUsed: true,
+    headers: { get: () => 'text/html' }, text: async () => page(bodyArticle('101', '<p>Synthetic resumed body.</p>')) }),
+    { now: () => time, sleep: async (ms) => { time += ms; } });
+  let importDone!: Promise<Awaited<ReturnType<typeof importStory>>>;
+  jest.mocked(importNativeStory).mockImplementation((url, repository, options) => { importDone = importStory(url, repository, client, digest, options); return importDone; });
+  const adding = render(<AddStory />); await waitFor(() => expect(screen.getByLabelText('Resume Download')).toBeEnabled());
+  await act(async () => { fireEvent.press(screen.getByLabelText('Resume Download')); await entered.promise; });
+  adding.unmount(); // Requests cancellation, but this transaction has passed its final guard.
+  await ready(); expect(screen.getByLabelText('Read First')).toBeDisabled();
+  const oldRead = handler('Read First'), oldResume = handler('Resume Download'), get = repo.getStory;
+  jest.spyOn(repo, 'getStory').mockImplementation(async (key) => {
+    if (key === id && !isStoryBusy(id)) { refreshed.release(); await finishRead.promise; }
+    return get(key);
+  });
+  await act(async () => commit.release()); await refreshed.promise;
+  expect(screen.getByLabelText('Read First')).toBeDisabled(); expect(screen.getByLabelText('Resume Download')).toBeDisabled();
+  act(() => { oldRead(); oldResume(); }); expect(router.push).not.toHaveBeenCalled();
+  await act(async () => { finishRead.release(); await importDone; });
+  await waitFor(() => expect(screen.getByLabelText('Read First')).toBeEnabled());
+  expect(screen.getByText('1 of 2 downloaded · 1 unread')).toBeTruthy();
+  expect(screen.getByLabelText('Read Pending')).toBeDisabled(); expect(screen.getByLabelText('Resume Download')).toBeEnabled();
+});
+
+test('UI D2: Contents prefers first unread readable, then first readable; a saved locator overrides Start', async () => {
+  const view = await ready();
+  expect(screen.getByLabelText('Start Reading')).toBeEnabled(); fireEvent.press(screen.getByLabelText('Start Reading'));
+  expect(router.push).toHaveBeenLastCalledWith({ pathname: '/reader', params: { chapter: id + ':post:101' } });
+  await act(async () => { await repo.commitDownloadedChapter(id, '102', await prepareContent('<p>Second local chapter.</p>', digest)); mockBlur(); mockRefocus(); });
+  await waitFor(() => expect(screen.getByLabelText('Read Pending')).toBeEnabled());
+  fireEvent.press(screen.getByLabelText('Start Reading')); expect(router.push).toHaveBeenLastCalledWith({ pathname: '/reader', params: { chapter: id + ':post:102' } });
+  const chapter = (await repo.getChapter(id + ':post:101'))!;
+  await act(async () => { await repo.saveLocator({ chapterId: chapter.id, contentHash: chapter.contentHash, blockId: chapter.blockIds[0]!, offset: 4, progression: .2, expandedSpoilers: [] }); mockBlur(); mockRefocus(); });
+  await waitFor(() => expect(screen.getByLabelText('Continue Reading')).toBeEnabled()); expect(screen.queryByLabelText('Start Reading')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Continue Reading')); expect(router.push).toHaveBeenLastCalledWith({ pathname: '/reader', params: { chapter: chapter.id } });
+  await act(async () => { await repo.reconcileManifest(id, metadata, { ...manifest, entries: [manifest.entries[1]!] }, 100); mockBlur(); mockRefocus(); });
+  await waitFor(() => expect(screen.getByText('Saved chapter no longer listed')).toBeTruthy());
+  fireEvent.press(screen.getByLabelText('Continue Reading')); expect(router.push).toHaveBeenLastCalledWith({ pathname: '/reader', params: { chapter: chapter.id } });
+  view.unmount();
+});
+
+test('UI D2: Library Continue disappears after downloads removal and returns with retained locator after redownload', async () => {
+  const chapter = (await repo.getChapter(id + ':post:101'))!;
+  await repo.saveLocator({ chapterId: chapter.id, contentHash: chapter.contentHash, blockId: chapter.blockIds[0]!, offset: 8, progression: .4, expandedSpoilers: [] });
+  const library = render(<Library />); await waitFor(() => expect(screen.getByLabelText('Continue Reading: Generated A, First')).toBeTruthy());
+  fireEvent.press(screen.getByLabelText('Continue Reading: Generated A, First'));
+  expect(router.push).toHaveBeenLastCalledWith({ pathname: '/reader', params: { chapter: chapter.id } });
+  await act(async () => { await repo.manageStory(metadata, 'downloads', { cleanup: async () => {} }); mockBlur(); mockRefocus(); });
+  await waitFor(() => expect(screen.queryByLabelText('Continue Reading: Generated A, First')).toBeNull());
+  await act(async () => { await repo.commitDownloadedChapter(id, '101', chapter); mockBlur(); mockRefocus(); });
+  await waitFor(() => expect(screen.getByLabelText('Continue Reading: Generated A, First')).toBeTruthy());
+  await act(async () => { await repo.manageStory(metadata, 'story', { cleanup: async () => {} }); mockBlur(); mockRefocus(); });
+  await waitFor(() => expect(screen.queryByLabelText('Open Generated A')).toBeNull());
+  expect(screen.queryByLabelText('Continue Reading: Generated A, First')).toBeNull(); library.unmount();
 });

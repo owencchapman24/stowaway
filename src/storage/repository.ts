@@ -1,4 +1,4 @@
-import type { Chapter, ChapterSummary, Locator, Preferences, StoryMetadata, StorySummary, StoryContentsEntry, ReconciliationResult } from '../domain/types';
+import type { Chapter, ChapterSummary, Locator, Preferences, StoryMetadata, StorySummary, StoryContentsEntry, ReconciliationResult, ContinueReadingTarget } from '../domain/types';
 import { DEFAULT_PREFERENCES } from '../domain/types';
 import { chapterId, storyId } from '../domain/identity';
 import { prepareContent } from '../content/sanitize';
@@ -286,6 +286,25 @@ export function createRepository(db: SqlDatabase) {
       const row = await db.getFirstAsync<LocatorRow>('SELECT * FROM reading_positions WHERE chapter_id = ?', id);
       return row && { chapterId: row.chapter_id, contentHash: row.content_hash, blockId: row.block_id,
         offset: row.block_offset, progression: row.progression, expandedSpoilers: JSON.parse(row.expanded_spoilers) };
+    },
+    async getContinueReading(story?: string): Promise<ContinueReadingTarget | null> {
+      const row = await db.getFirstAsync<Omit<ContinueReadingTarget, 'currentlyListed'> & { currentlyListed: number }>(
+        `SELECT s.id AS storyId, s.title AS storyTitle, c.id AS chapterId, e.title AS chapterTitle,
+          e.currently_listed AS currentlyListed FROM reading_positions p
+          JOIN chapters c ON c.id = p.chapter_id JOIN stories s ON s.id = c.story_id
+          JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
+          WHERE (${await availableBody(db)}) ${story ? 'AND s.id = ?' : ''}
+          ORDER BY p.updated_at DESC, c.id LIMIT 1`, ...(story ? [story] : []));
+      return row ? { ...row, currentlyListed: Boolean(row.currentlyListed) } : null;
+    },
+    async getReaderPosition(id: string): Promise<{ position: number; total: number } | null> {
+      const version = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+      if ((version?.user_version ?? 0) < 3) return db.getFirstAsync(`SELECT c.position,
+        (SELECT COUNT(*) FROM chapters n WHERE n.story_id = c.story_id) AS total FROM chapters c WHERE c.id = ?`, id);
+      return db.getFirstAsync(`SELECT e.position, (SELECT COUNT(*) FROM threadmark_entries n
+        WHERE n.story_id = e.story_id AND n.currently_listed = 1) AS total
+        FROM chapters c JOIN threadmark_entries e ON e.story_id = c.story_id AND e.post_id = c.post_id
+        WHERE c.id = ? AND e.currently_listed = 1 AND (${await availableBody(db)})`, id);
     },
     async getLastChapter(): Promise<string | null> {
       const row = await db.getFirstAsync<{ chapter_id: string }>(`SELECT p.chapter_id FROM reading_positions p

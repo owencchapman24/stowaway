@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { migrate } from '../../src/storage/migrations';
 import { compileFixture, createRepository } from '../../src/storage/repository';
-import { CLEANUP_WARNING, REMOVAL_ROLLBACK, type ManagementAction } from '../../src/storage/management';
+import { CLEANUP_WARNING, REMOVAL_ROLLBACK, REMOVAL_UNCERTAIN, type ManagementAction } from '../../src/storage/management';
 import { createSourceImageFiles } from '../../src/images/files';
 import { cleanupStoryRenders, protectRender } from '../../src/storage/render-cleanup';
 import { createLocalContentFiles } from '../../src/storage/local-files';
@@ -325,4 +325,60 @@ test('render-marker I/O failure surfaces cleanup warning after logical removal, 
   const read = files.read; files.read = async (path) => { if (path.endsWith('/owner.json')) throw new Error('Injected read failure'); return read(path); };
   expect(await remove()).toEqual({ warning: CLEANUP_WARNING }); expect(await repo.getChapter(cid)).toBeNull(); expect(files.exists(directory)).toBe(true);
   files.read = read; await cleanupStoryRenders(files, id); expect(files.exists(directory)).toBe(false);
+});
+
+test.each(['downloads', 'story'] as const)('UI D4: %s COMMIT then driver rejection observes logical success and cleans safely', async (action) => {
+  const { a, b, removed } = await initial(), transaction = host.db.withExclusiveTransactionAsync;
+  host.db.withExclusiveTransactionAsync = async (work) => { await transaction(work); throw new Error('Injected connection-close rejection after COMMIT'); };
+  const clean = jest.fn(cleanup), settled = jest.fn(async () => {
+    await expect(repo.manageStory(metadata, action, { cleanup })).rejects.toMatchObject({ code: 'busy' });
+    expect(await repo.getChapter(cid)).toBeNull();
+  });
+  expect(await repo.manageStory(metadata, action, { cleanup: clean, onSettled: settled })).toEqual({ warning: null });
+  expect(clean).toHaveBeenCalledWith(expect.arrayContaining([a.path, removed.path]));
+  expect(settled).toHaveBeenCalledTimes(1);
+  expect(!!await repo.getStory(id)).toBe(action === 'downloads');
+  expect(files.exists(b.path)).toBe(true); expect(await repo.getStory(otherId)).not.toBeNull();
+  expect(files.exists(a.path)).toBe(false); expect(await host.db.getAllAsync('PRAGMA foreign_key_check')).toEqual([]);
+});
+
+test('UI D4: failed authoritative outcome reread is neutral, performs no cleanup and keeps ownership through settlement', async () => {
+  await initial(); const transaction = host.db.withExclusiveTransactionAsync, get = host.db.getFirstAsync;
+  host.db.withExclusiveTransactionAsync = async (work) => { await transaction(work); host.db.getFirstAsync = async () => { throw new Error('Read unavailable'); }; throw new Error('Driver close'); };
+  const clean = jest.fn(), settled = jest.fn(async () => {
+    await expect(repo.manageStory(metadata, 'story', { cleanup: clean })).rejects.toMatchObject({ code: 'busy' });
+  });
+  await expect(repo.manageStory(metadata, 'downloads', { cleanup: clean, onSettled: settled })).rejects.toMatchObject({ code: 'storage', message: REMOVAL_UNCERTAIN });
+  expect(clean).not.toHaveBeenCalled(); expect(settled).toHaveBeenCalledTimes(1);
+  host.db.getFirstAsync = get; expect(await repo.getChapter(cid)).toBeNull();
+});
+
+test('UI D2: global/story Continue selects latest readable locator across reopen, unlisting, removal and redownload', async () => {
+  await initial();
+  await host.db.runAsync('UPDATE reading_positions SET updated_at = 10');
+  await host.db.runAsync('UPDATE reading_positions SET updated_at = 20 WHERE chapter_id = ?', cid);
+  expect(await repo.getContinueReading()).toEqual({ storyId: id, storyTitle: metadata.title, chapterId: cid, chapterTitle: 'Generated 101', currentlyListed: true });
+  await host.db.runAsync('UPDATE reading_positions SET updated_at = 30 WHERE chapter_id = ?', otherId + ':post:101');
+  expect(await repo.getContinueReading()).toMatchObject({ storyId: otherId });
+  expect(await repo.getContinueReading(id)).toMatchObject({ chapterId: cid });
+  await host.db.runAsync('UPDATE reading_positions SET updated_at = 40 WHERE chapter_id = ?', id + ':post:102');
+  expect(await repo.getContinueReading()).toMatchObject({ chapterId: id + ':post:102', currentlyListed: false });
+  host.close(); host = hostSqlite(join(folder, 'test.db')); repo = createRepository(host.db);
+  expect(await repo.getContinueReading(id)).toMatchObject({ chapterId: id + ':post:102', currentlyListed: false });
+  const saved = (await repo.getChapter(cid))!;
+  await remove(); expect(await repo.getContinueReading(id)).toBeNull(); expect(await repo.getContinueReading()).toMatchObject({ storyId: otherId });
+  await repo.commitDownloadedChapter(id, '101', saved);
+  expect(await repo.getContinueReading(id)).toMatchObject({ chapterId: cid, currentlyListed: true });
+  await remove('story'); expect(await repo.getContinueReading(id)).toBeNull(); expect(await repo.getContinueReading()).toMatchObject({ storyId: otherId });
+});
+
+test('UI D2: Read flags alone never invent a Continue target; reader ordinal includes pending entries', async () => {
+  await repo.commitInitialManifest(metadata, manifest()); await repo.setEntryRead(id, '101', true);
+  expect(await repo.getContinueReading()).toBeNull();
+  await repo.commitDownloadedChapter(id, '102', await prepareContent('<p>Generated local text.</p>', digest));
+  expect(await repo.getContinueReading(id)).toBeNull();
+  expect(await repo.getReaderPosition(id + ':post:102')).toEqual({ position: 1, total: 3 });
+  expect(await repo.getReaderPosition(cid)).toBeNull();
+  await repo.reconcileManifest(id, metadata, manifest(['101']), 100);
+  expect(await repo.getReaderPosition(id + ':post:102')).toBeNull();
 });

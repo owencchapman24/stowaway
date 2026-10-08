@@ -14,7 +14,7 @@ jest.mock('react-native-webview', () => {
 const chapter: Chapter = { id: 'spacebattles:thread:9001:post:101', storyId: 'spacebattles:thread:9001',
   title: 'Generated first', position: 0, html: '<p>Generated</p>', contentHash: 'generated-hash',
   sanitizerVersion: '1', blockIds: ['block-0001'], links: {} };
-const repo = { getChapter: jest.fn(), getLocator: jest.fn(), listChapters: jest.fn(), getChapterAssetPath: jest.fn(), listChapterImages: jest.fn(), saveLocator: jest.fn() };
+const repo = { getReaderPosition: jest.fn(async () => ({ position: 0, total: 1 })),  getChapter: jest.fn(), getLocator: jest.fn(), listChapters: jest.fn(), getChapterAssetPath: jest.fn(), listChapterImages: jest.fn(), saveLocator: jest.fn() };
 beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(Crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');

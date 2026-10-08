@@ -1,3 +1,4 @@
+import { S1Failure } from '../sources/spacebattles/types';
 import type { Chapter } from '../domain/types';
 import type { SqlConnection, SqlDatabase, serializeWrites } from '../storage/database';
 import { classifyImageUrl } from './source-url';
@@ -6,7 +7,7 @@ import { validateSlots } from './slots';
 import type { ChapterImage, ImageDiscovery, ImageFile, ImageReason, ImageSlot, ImageSummary } from './types';
 import { availableBody } from '../storage/availability';
 
-function cancelled(signal?: AbortSignal) { if (signal?.aborted) throw new Error('Image commit cancelled.'); }
+function cancelled(signal?: AbortSignal) { if (signal?.aborted) throw new S1Failure('cancelled', 'Image work cancelled; text and completed local images are retained.'); }
 export async function insertImageSlots(tx: SqlConnection, id: string, content: Pick<Chapter, 'html' | 'blockIds'>,
   slots: ImageSlot[], signal?: AbortSignal) {
   validateSlots(content, slots);
