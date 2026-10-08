@@ -8,6 +8,63 @@ import { index, indexUrl, page, post, range, rangeUrl, row, tabs, threadUrl } fr
 const thread = threadFromUrl(threadUrl);
 const doc = (url: string, html: string): Document => ({ url, html, status: 200 });
 const root = doc(threadUrl, page(tabs));
+
+test.each([
+  ['page skip', `${indexUrl}?page=2`, `${indexUrl}?page=3`],
+  ['category change', `${indexUrl}?page=2`, `${indexUrl}?page=2&threadmark_category=42`],
+  ['category alias change', `${indexUrl}?page=2`, `${indexUrl}?page=2&threadmark_category_id=42`],
+  ['page size change', `${indexUrl}?page=2&per_page=7`, `${indexUrl}?page=2&per_page=8`],
+  ['endpoint change', `${indexUrl}?page=2`, `${threadUrl}reader?page=2`],
+  ['ambiguous page', `${indexUrl}?page=2`, `${indexUrl}?page=2&page=3`],
+])('hardening: index redirect rejects %s without scoped totals', async (_name, requested, returned) => {
+  const result = await discoverManifest(thread, async (url) => url === indexUrl
+    ? doc(url, index(row('91'), { next: requested, last: `${indexUrl}?page=3` }))
+    : doc(returned, index(row('93'))), root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.code).toBe('incomplete');
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91']);
+});
+
+test('hardening: initial index cannot redirect past page one', async () => {
+  const result = await discoverManifest(thread, async () => doc(`${indexUrl}?page=2`, index(row('92'))), root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.code).toBe('incomplete');
+  expect(result.entries).toEqual([]);
+});
+
+test('hardening: same-page slug, trailing slash, numeric and query-order canonicalization is accepted', async () => {
+  const next = `${indexUrl}?page=2&per_page=7&threadmark_category=9`;
+  const result = await discoverManifest(thread, async (url) => url === indexUrl
+    ? doc(`${threadUrl.replace('synthetic.', '')}threadmarks/?page=1`, index(row('91'), { next, last: next }))
+    : doc(`${threadUrl.replace('synthetic.', 'renamed.')}threadmarks/?threadmark_category=9&per_page=7&page=02`, index(row('92'))), root);
+  expect(result.state).toBe('COMPLETE');
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91', '92']);
+});
+
+test.each([
+  ['min', rangeUrl.replace('min=1', 'min=2')],
+  ['max', rangeUrl.replace('max=8', 'max=9')],
+  ['category', rangeUrl.replace('category_id=9', 'category_id=42')],
+  ['endpoint', rangeUrl.replace('threadmarks-load-range', 'threadmarks')],
+  ['thread', rangeUrl.replace('9001', '9002')],
+  ['missing bound', rangeUrl.replace('&max=8', '')],
+  ['unsupported category alias', rangeUrl.replace('threadmark_category_id', 'threadmark_category')],
+  ['duplicate bound', `${rangeUrl}&min=2`],
+])('hardening: range redirect rejects changed %s', async (_name, returned) => {
+  const result = await discoverManifest(thread, async (url) => url === indexUrl
+    ? doc(url, index(row('91') + range())) : doc(returned, row('92')), root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.code).toBe('incomplete');
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91']);
+});
+
+test('hardening: equivalent range slug, slash and query order are accepted', async () => {
+  const returned = `${threadUrl.replace('synthetic.', '')}threadmarks-load-range/?max=08&min=01&threadmark_category_id=9`;
+  const result = await discoverManifest(thread, async (url) => url === indexUrl
+    ? doc(url, index(row('91') + range())) : doc(returned, row('92')), root);
+  expect(result.state).toBe('COMPLETE');
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91', '92']);
+});
 function source(pages: Record<string, string>) {
   return jest.fn(async (url: string) => {
     if (!(url in pages)) throw new S1Failure('network', 'Synthetic missing page.');

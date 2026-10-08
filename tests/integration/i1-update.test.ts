@@ -79,6 +79,30 @@ async function check(posts: string[], titles: Record<string, string> = {}, at = 
   return { ...fake, result };
 }
 
+test.each(['downloaded', 'pending', 'unavailable shell'] as const)('hardening: redirected page skip preserves %s entry and successful check', async (availability) => {
+  const posts = ['91', '92', '93'];
+  await initial(availability === 'pending' ? ['91', '93'] : posts, posts);
+  if (availability === 'unavailable shell') await repo.manageStory(metadata, 'downloads', { cleanup: async () => {} });
+  await repo.setEntryRead(id, '92', true);
+  await repo.reconcileManifest(id, metadata, manifest(posts), 100);
+  const before = await state();
+  const second = `${indexUrl}?page=2`, third = `${indexUrl}?page=3`;
+  const requests: string[] = []; let time = 0;
+  const client = new RequestClient(async (url) => {
+    requests.push(url);
+    return { url, status: url === second ? 302 : 200,
+      headers: { get: (key) => key === 'location' && url === second ? third : null },
+      text: async () => url === importRootUrl ? page(storyHeader + tabs)
+        : url === indexUrl ? index(row('91'), { next: second, last: third }) : index(row('93')) };
+  }, { now: () => time, sleep: async (ms) => { time += ms; } });
+  const result = await updateStory(metadata, repo, client, digest, { now: () => 200 });
+  expect(result.failure?.code).toBe('incomplete'); expect(result.reconciliation).toBeNull();
+  expect(await state()).toEqual(before);
+  expect((await repo.listContents(id)).map((entry) => entry.postId)).toEqual(posts);
+  expect(await repo.getStory(id)).toMatchObject({ lastUpdateAttemptAt: 200, lastUpdateSuccessAt: 100 });
+  expect(requests).toEqual([importRootUrl, indexUrl, second, third]);
+});
+
 test('v2 -> v3 preserves stories, manifests, bodies, locators, preferences and bundled asset; rebuild rolls back on failure', async () => {
   host.close(); host = hostSqlite(join(folder, 'legacy.db')); await migrate(host.db, 2); repo = createRepository(host.db);
   const fixture = await compileFixture(digest); await repo.seed(fixture, asset);

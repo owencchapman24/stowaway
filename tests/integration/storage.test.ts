@@ -7,6 +7,8 @@ import { compileFixture, createRepository } from '../../src/storage/repository';
 import type { Locator } from '../../src/domain/types';
 import { hostSqlite } from './host-sqlite';
 import { exclusiveTransaction } from '../../src/storage/database';
+import { PositionSession } from '../../src/reader/position';
+import { ReadCompletion } from '../../src/reader/read-state';
 
 const digest = async (value: string) => createHash('sha256').update(value).digest('hex');
 const asset = { relativePath: 'assets/11111111-1111-4111-8111-111111111111.png', byteLength: 2024 };
@@ -21,6 +23,41 @@ afterEach(() => {
   host.close();
   if (!folder.startsWith(join(tmpdir(), 'stowaway-s0-'))) throw new Error('Unexpected test directory.');
   rmSync(folder, { recursive: true, force: true });
+});
+
+test.each([false, true])('hardening: real locator rollback cannot resurrect older progress; Read saves independently (newer fails=%s)', async (newerFails) => {
+  const fixture = await compileFixture(digest), repo = createRepository(host.db);
+  await repo.seed(fixture, asset); const chapter = fixture.chapters[0]!;
+  const before = await repo.getChapter(chapter.id);
+  const locator: Locator = { chapterId: chapter.id, contentHash: chapter.contentHash,
+    blockId: chapter.blockIds[1]!, offset: 10, progression: .2, expandedSpoilers: [] };
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const transaction = host.db.withExclusiveTransactionAsync.bind(host.db); let count = 0;
+  const intercepted = jest.spyOn(host.db, 'withExclusiveTransactionAsync').mockImplementation((work) => transaction(async (tx) => {
+    const call = ++count; await work(tx);
+    if (call === 1) { entered(); await held; throw new Error('Older locator rollback'); }
+    if (call === 2 && newerFails) throw new Error('Newer locator rollback');
+  }));
+  const offsets: number[] = [];
+  const session = new PositionSession(async (value) => { offsets.push(value.offset); await repo.saveLocator(value); }, jest.fn());
+  const identity = { session: 'test', chapterId: chapter.id, contentHash: chapter.contentHash };
+  session.receive({ ...identity, type: 'ready' });
+  session.receive({ ...identity, type: 'position', reason: 'scroll', locator });
+  const older = session.flush().catch(() => {}); await started;
+  session.receive({ ...identity, type: 'position', reason: 'scroll', locator: { ...locator, offset: 20 } });
+  const newer = session.flush().catch(() => {}); release(); await Promise.all([older, newer]);
+  intercepted.mockRestore();
+  const read = new ReadCompletion(() => repo.markChapterRead(chapter.id));
+  await read.request();
+  expect((await repo.listContents(chapter.storyId)).find((entry) => entry.id === chapter.id)?.isRead).toBe(true);
+  if (!newerFails) expect((await repo.getLocator(chapter.id))?.offset).toBe(20);
+  await Promise.all([session.flush(), read.flush()]);
+  expect((await repo.getLocator(chapter.id))?.offset).toBe(20);
+  expect(offsets).toEqual(newerFails ? [10, 20, 20] : [10, 20]);
+  expect(await repo.getChapter(chapter.id)).toEqual(before);
+  expect(await host.db.getAllAsync('PRAGMA foreign_key_check')).toEqual([]); session.dispose();
 });
 
 test('repeat migration/seed/reopen preserves a single story, three bodies, locator and settings', async () => {
