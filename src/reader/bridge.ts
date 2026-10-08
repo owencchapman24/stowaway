@@ -1,3 +1,5 @@
+import { READER_FONTS } from '../domain/preferences';
+
 // This is the only script embedded in the reader. Never accept source script or eval messages.
 export const POSITION_BRIDGE = String.raw`
 (function () {
@@ -192,7 +194,7 @@ export const POSITION_BRIDGE = String.raw`
       if (font === undefined) font = 'georgia';
       if (!ready || !Number.isFinite(fontSize) || fontSize < 14 || fontSize > 32 ||
         (theme !== 'light' && theme !== 'paper' && theme !== 'dark') ||
-        ['georgia', 'palatino', 'serif', 'sans'].indexOf(font) < 0) return;
+        ${JSON.stringify(READER_FONTS)}.indexOf(font) < 0) return;
       const locator = snapshot();
       flush('flush');
       send({ type: 'layout-start' });

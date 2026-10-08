@@ -24,7 +24,7 @@ export interface Chapter extends ChapterSummary {
 }
 
 export type AppStyle = 'stowaway' | 'classic';
-export type ReaderFont = 'georgia' | 'palatino' | 'serif' | 'sans';
+export type ReaderFont = 'georgia' | 'baskerville' | 'palatino' | 'charter' | 'times' | 'serif' | 'sans' | 'avenir-next' | 'helvetica-neue';
 export interface Preferences {
   theme: 'light' | 'paper' | 'dark';
   fontSize: number;

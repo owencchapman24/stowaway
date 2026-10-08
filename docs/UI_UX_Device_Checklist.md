@@ -49,3 +49,15 @@ Retest on the refinement commit; earlier subjective feedback is not a pass for t
 - [ ] 36. `↓ Not downloaded` clearly means unavailable text, not deletion/error. Its row cannot open; manual Read correction works.
 - [ ] 37. Scan a naturally long story. Chapters dominate the initial viewport; header Story Actions reaches update/image/source/removal without scrolling the entire list. Check the separated Danger Zone and confirmation/cancellation.
 - [ ] 38. At a large accessibility text size, font/style/theme choices, long titles and Done remain reachable; quieter reader chrome stays easy to use.
+
+## Final focused font-picker checks
+
+Owen's latest feedback freezes the accepted visual direction outside font selection. These checks remain pending on the new font-refinement commit; no new device pass is inferred from that feedback.
+
+- [ ] 39. Reading Appearance shows one current-font row. Open Reading Font, compare the two groups, select repeatedly, return with Done, and reopen. Check VoiceOver focus/selection and back/escape behavior.
+- [ ] 40. Try all nine choices: Baskerville, Georgia, Palatino, Charter, Times New Roman, System Serif, System Sans, Avenir Next and Helvetica Neue. Confirm distinctness where expected and note any fallback or indistinguishable pair.
+- [ ] 41. Compare the native own-font labels with actual reader prose. System Serif intentionally says **Preview in reader**; judge its actual prose there.
+- [ ] 42. Confirm each selection survives reader close/reopen and app relaunch. Existing Georgia/Palatino/Serif/Sans preferences retain their meaning, and App Style/theme/size stay independent.
+- [ ] 43. At a recognizable deep paragraph or gap, switch between a serif and Avenir Next/Helvetica Neue, then return. Verify passage preservation, navigation/reopening and no Read completion from reflow.
+- [ ] 44. At maximum comfortable accessibility text size, scroll the full font list and reach Done. Check wrapped multiword labels, checkmarks and 44pt target comfort.
+- [ ] 45. With the app already running and networking disabled, try every font and reopen local chapters. Note any missing/fallback font. This does not establish the deferred S2B Metro-free cold start.

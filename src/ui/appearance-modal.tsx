@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { AccessibilityInfo, findNodeHandle, Modal, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { AppStyle } from '../domain/types';
@@ -10,13 +10,15 @@ export function AppearanceModal({ visible, title, onClose, children }: {
 }) {
   const theme = useTheme();
   const heading = useRef<Text>(null);
-  return <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} onShow={() => {
+  const focusHeading = useCallback(() => {
     const handle = findNodeHandle(heading.current);
     if (handle !== null) AccessibilityInfo.setAccessibilityFocus(handle);
-  }}>
+  }, []);
+  useEffect(() => { if (visible) focusHeading(); }, [visible, title, focusHeading]);
+  return <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} onShow={focusHeading}>
     <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000066' }}>
-      <SafeAreaView accessibilityViewIsModal style={{ maxHeight: '90%', backgroundColor: theme.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }}>
+      <SafeAreaView accessibilityViewIsModal onAccessibilityEscape={onClose} style={{ maxHeight: '90%', backgroundColor: theme.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
+        <ScrollView key={title} contentContainerStyle={{ padding: 20, gap: 20 }}>
           <Text ref={heading} accessibilityRole="header" style={{ color: theme.textPrimary, fontSize: 20, fontWeight: '600' }}>{title}</Text>
           {children}
           <Button label={'Close ' + title.toLowerCase()} text="Done" variant="primary" onPress={onClose} />

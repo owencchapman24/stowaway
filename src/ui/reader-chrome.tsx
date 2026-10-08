@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { READER_FONTS } from '../domain/preferences';
+import { normalizePreferences } from '../domain/preferences';
 import { AppearanceModal } from './appearance-modal';
+import { CurrentReadingFont, ReadingFontList } from './reading-fonts';
 import type { Preferences } from '../domain/types';
 import { AppText, Button, uiStyles } from './components';
 import { useTheme } from './theme';
@@ -32,14 +34,14 @@ export function AppearanceSheet({ visible, preferences, disabled, onChange, onCl
 }) {
 
   const theme = useTheme();
-  return <AppearanceModal visible={visible} title="Reading Appearance" onClose={onClose}>
+  const [pickingFont, setPickingFont] = useState(false);
+  if (!visible && pickingFont) setPickingFont(false);
+  const font = normalizePreferences(preferences).font;
+  return <AppearanceModal visible={visible} title={pickingFont ? 'Reading Font' : 'Reading Appearance'}
+    onClose={pickingFont ? () => setPickingFont(false) : onClose}>
+    {pickingFont ? <ReadingFontList font={font} disabled={disabled} onSelect={(value) => onChange({ ...preferences, font: value })} /> : <>
           <AppText>Font</AppText>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {READER_FONTS.map((font) => <View key={font} style={{ flexBasis: '45%', flexGrow: 1 }}>
-              <Button label={'Use ' + font + ' reading font'} text={font.charAt(0).toUpperCase() + font.slice(1)} disabled={disabled}
-                selected={(preferences.font ?? 'georgia') === font} onPress={() => { if ((preferences.font ?? 'georgia') !== font) onChange({ ...preferences, font }); }} />
-            </View>)}
-          </View>
+          <CurrentReadingFont font={font} disabled={disabled} onPress={() => setPickingFont(true)} />
           <AppText>Text Size</AppText>
           <View style={uiStyles.actions}>
             <Button label="Decrease reading font size" text="A−" disabled={disabled || preferences.fontSize <= 14}
@@ -52,5 +54,6 @@ export function AppearanceSheet({ visible, preferences, disabled, onChange, onCl
             {(['light', 'paper', 'dark'] as const).map((value) => <Button key={value} label={'Use ' + value + ' reading theme'} text={value.charAt(0).toUpperCase() + value.slice(1)}
               disabled={disabled} selected={preferences.theme === value} onPress={() => { if (preferences.theme !== value) onChange({ ...preferences, theme: value }); }} />)}
           </View>
+    </>}
   </AppearanceModal>;
 }

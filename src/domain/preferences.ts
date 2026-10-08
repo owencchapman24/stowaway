@@ -1,6 +1,6 @@
 import { DEFAULT_PREFERENCES, type Preferences, type ReaderFont } from './types';
 
-export const READER_FONTS: readonly ReaderFont[] = ['georgia', 'palatino', 'serif', 'sans'];
+export const READER_FONTS: readonly ReaderFont[] = ['baskerville', 'georgia', 'palatino', 'charter', 'times', 'serif', 'sans', 'avenir-next', 'helvetica-neue'];
 /** Old JSON and untrusted persisted values never become CSS or bridge commands. */
 export function normalizePreferences(value: unknown): Preferences & { font: ReaderFont } {
   const p = value && typeof value === 'object' ? value as Record<string, unknown> : {};

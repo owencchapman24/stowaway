@@ -127,12 +127,13 @@ function sampleAt(top: number) {
   return messages.filter((message) => message.type === 'position').at(-1)!.locator!;
 }
 
-test.each(['palatino', 'serif', 'sans'])('font %s reflow restores a deep semantic paragraph, not progression, without transient saves or Read completion', (font) => {
+const fontGeometry: Record<string, number> = { palatino: 76, serif: 66, sans: 54, baskerville: 72, charter: 82, times: 48, 'avenir-next': 86, 'helvetica-neue': 52 };
+test.each(Object.keys(fontGeometry))('font %s reflow restores a deep semantic paragraph, not progression, without transient saves or Read completion', (font) => {
   const canonical = importedLayout(Array.from({ length: 100 }, (_, i) => `<p>Generated paragraph ${i}.</p>`).join(''),
     (_element, index) => index === 0 ? [0, 6000] : [(index - 1) * 60, 42]);
   Array.from(document.querySelectorAll<HTMLElement>('p[data-block]')).forEach((element, index) => {
     element.getBoundingClientRect = () => {
-      const step = ({ palatino: 76, serif: 66, sans: 54 } as Record<string, number>)[document.documentElement.dataset.font!] ?? 60;
+      const step = fontGeometry[document.documentElement.dataset.font!] ?? 60;
       const top = 24 + index * step + (step === 60 ? 0 : index % 5 * 2) - y;
       return { top, bottom: top + 42, height: 42 } as DOMRect;
     };
@@ -141,7 +142,7 @@ test.each(['palatino', 'serif', 'sans'])('font %s reflow restores a deep semanti
   run(null); const sampled = sampleAt(3039);
   expect(sampled).toMatchObject({ blockId: canonical.blockIds[51], offset: 15 });
   bridgeWindow.StowawayReader.restyle(20, 'paper', font); jest.runAllTimers();
-  const step = ({ palatino: 76, serif: 66, sans: 54 } as Record<string, number>)[font]!;
+  const step = fontGeometry[font]!;
   expect(y).toBeCloseTo(24 + 50 * step + 15);
   expect(Math.abs(y - sampled.progression * 11800)).toBeGreaterThan(200);
   expect(messages.filter((message) => message.type === 'position')).toHaveLength(1);

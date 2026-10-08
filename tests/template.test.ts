@@ -4,16 +4,28 @@ import { sanitize } from '../src/content/sanitize';
 import { fixtureStory } from '../src/fixtures/story';
 import { READER_FONT_STACKS } from '../src/reader/appearance';
 import type { Preferences, ReaderFont } from '../src/domain/types';
+import { READER_FONTS } from '../src/domain/preferences';
 
-test.each(Object.keys(READER_FONT_STACKS) as ReaderFont[])('reader %s font is selected only from local app-owned CSS', (font) => {
+const expectedStacks: Record<ReaderFont, string> = {
+  georgia: 'Georgia, "Times New Roman", serif', baskerville: 'Baskerville, Georgia, serif',
+  palatino: 'Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif', charter: 'Charter, Georgia, serif',
+  times: '"Times New Roman", Times, serif', serif: 'ui-serif, "Times New Roman", serif',
+  sans: '-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
+  'avenir-next': '"Avenir Next", -apple-system, "Helvetica Neue", Arial, sans-serif',
+  'helvetica-neue': '"Helvetica Neue", Helvetica, Arial, sans-serif',
+};
+test.each(Object.keys(expectedStacks) as ReaderFont[])('reader %s font is selected only from local app-owned CSS', (font) => {
   const content = sanitize('<p>Original synthetic paragraph.</p>');
   const html = readerDocument({ ...content, id: 'one', storyId: 'story', title: 'Generated', position: 0, contentHash: 'hash' },
     null, { theme: 'paper', fontSize: 20, font }, '11111111-1111-4111-8111-111111111111');
   expect(html).toContain(`data-theme="paper" data-font="${font}"`);
-  expect(html).toContain(`:root[data-font="${font}"] { --reader-font:${READER_FONT_STACKS[font]}; }`);
+  expect(READER_FONT_STACKS).toEqual(expectedStacks);
+  expect([...READER_FONTS].sort()).toEqual(Object.keys(expectedStacks).sort());
+  expect(html).toContain(`:root[data-font="${font}"] { --reader-font:${expectedStacks[font]}; }`);
   expect(html).toContain('--paper:#eee8dd; --ink:#332e27; --link:#6b512e');
   expect(html).toContain(`<main id="chapter">${content.html}</main>`);
   expect(html).toContain("font-src 'none'"); expect(html).not.toContain('@font-face');
+  expect(html).not.toMatch(/@import|url\s*\(|https?:\/\//i);
 });
 
 test('invalid persisted font/theme/size cannot inject CSS or script into the generated reader', () => {

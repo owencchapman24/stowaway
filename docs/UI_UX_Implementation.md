@@ -4,6 +4,61 @@
 
 S0, S1 and S2A are accepted; I0–I4 are merged/accepted. The whole-repository Astra audit is complete. Pre-UI hardening is merged in PR #9 and passed Owen's focused phone retest, within [its recorded limits](Pre_UI_Hardening.md). S2B remains deferred; full v0 remains incomplete. No PR creation or merge belongs to this pass.
 
+
+## Final reader-font refinement — 8 October 2026
+
+Focused follow-up on `95f41b148eae5071b2db9073409885f7420fa326`, still on `feat/ui-overhaul`. Owen reports that Stowaway is preferred, Classic remains useful, the chapter-first Contents and compact Read marks are good, and Light/Paper/Dark are good. This freezes that direction; it does not mark any new device checklist item passed. Only font selection changes in this pass.
+
+**Availability checked before implementation:** [Apple's system-font catalog](https://developer.apple.com/fonts/system-fonts/) identifies Baskerville, Georgia, Palatino, Charter Roman, Times New Roman, Avenir Next Regular and Helvetica Neue as **iOS system fonts**, not downloadable-only fonts. The catalog's raw HTML platform/type markers were inspected because plain extracted text omits that distinction. [WebKit's platform-font documentation](https://webkit.org/blog/10247/new-webkit-features-in-safari-13-1/) documents `ui-serif` on iOS 13.4 and later; [WebKit's system-font guidance](https://webkit.org/blog/3709/using-the-system-font-in-web-content/) documents `-apple-system`. These support local use in the target WKWebView. They do not prove the exact face selected on an unseen phone. The recorded device is iPhone 17 Pro; the old reported iOS 26.7.1 remains tentative, and current iOS/Expo Go versions are unconfirmed.
+
+| Picker label | Persisted key | Exact static CSS stack |
+| --- | --- | --- |
+| Baskerville | `baskerville` | `Baskerville, Georgia, serif` |
+| Georgia | `georgia` | `Georgia, "Times New Roman", serif` |
+| Palatino | `palatino` | `Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif` |
+| Charter | `charter` | `Charter, Georgia, serif` |
+| Times New Roman | `times` | `"Times New Roman", Times, serif` |
+| System Serif | `serif` | `ui-serif, "Times New Roman", serif` |
+| System Sans | `sans` | `-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif` |
+| Avenir Next | `avenir-next` | `"Avenir Next", -apple-system, "Helvetica Neue", Arial, sans-serif` |
+| Helvetica Neue | `helvetica-neue` | `"Helvetica Neue", Helvetica, Arial, sans-serif` |
+
+The five added keys extend the existing typed preference whitelist; existing `georgia/palatino/serif/sans` values retain their meaning. Missing/invalid values still resolve to Georgia. The same reading-settings JSON and repository save/reload path remain. No migration, preference reset or source-provided family string. The bridge whitelist is generated from the app-owned enum list; each accepted key selects fixed CSS, never arbitrary CSS input.
+
+**Picker:** Reading Appearance now has one current-font row. It switches the existing native Modal to a grouped Reading Font view (Bookish Serif / Sans Serif); a second native modal is not stacked. Selecting a row keeps the list open for comparisons, and the checkmark follows saved preference props. Existing readiness/settlement disables changes during restyle. Done, native back and accessibility escape return to Reading Appearance; outer Done closes it. Reopening starts at Appearance. Switching views resets the inner scroll position and requests accessibility focus on its heading.
+
+Named fonts preview through native UIFont families; System Sans uses React Native's System family. Inspection of the installed React Native `RCTFont.mm` found no exposed system-serif design path: System Serif therefore uses a neutral label with **Preview in reader**, also exposed as an accessibility hint, instead of guessing a private New York name. Web previews can use `ui-serif`; they cannot certify native face selection. Rows have independent minimum 44×44 targets, visible checkmarks, selected/disabled accessibility state, scalable text and unrestricted wrapping. The existing scrollable modal contains all rows and Done.
+
+**No bundled fonts.** Atkinson Hyperlegible's [specific Google Fonts artifact license](https://github.com/googlefonts/atkinson-hyperlegible/blob/main/OFL.txt) is SIL OFL 1.1 and permits bundling with its copyright/license. It is deferred because app-owned font staging, chapter file access and narrowly scoped font-loading security proof would expand this task. `font-src 'none'` is unchanged; no `@font-face`, remote font request, font package or asset was introduced. Hoefler Text is also cataloged for iOS but omitted to keep nine useful choices. New York is requested only through the public `ui-serif` keyword, never a private font name.
+
+**Reader safety:** the established snapshot/flush/layout-start/semantic settle sequence is unchanged. Tests exercise all eight non-default keys with nonuniform deep-paragraph geometry, unchanged canonical DOM, no transient locator save or Read completion, and quiesced exit. Reader integration exercises Palatino → Avenir Next through persistence/restyle, then Paper and navigation. Existing locator revisioning, session ownership, content hashes/block IDs and completion behavior remain.
+
+**Validation:** on Node 22.23.3 / Windows, `npm.cmd run check` passed TypeScript, ESLint and **760 tests in 30 suites** (19 additional cases over 741). `npx.cmd expo install --check` reported dependencies current; `npx.cmd expo-doctor@latest` passed **21/21**; `npx.cmd expo export --platform ios` completed with 24 assets; `git diff --check` passed. No snapshots, dependency changes or generated artifacts were added.
+
+The existing host-SQLite preference test automatically exercises save/reopen for all nine keys under schemas v1/v6, preserving shell independence and unknown/legacy fallback. Static CSS tests independently pin every stack and reject remote font/CSS injection paths. Picker tests cover entry, groups, saved selected state, full targets, previews, focus, back/dismiss/reopen, and scroll/wrap structure at an emulated 2.5× text scale. All earlier behavioral regressions are retained; no assertions or timing budgets were weakened. During implementation, TypeScript caught an unsupported heading prop and lint caught effect-based state reset; both were corrected without changing shared text components or relaxing rules. A focus-test failure was resolved by mocking the actual native module export, keeping the focus assertion intact.
+
+Focused visual compositions used actual production React Native Web components at 320-point width in light/dark, plus explicitly emulated 2× text and the scrolled list bottom. Labels wrap and Done remains reachable. Desktop font fallbacks and synthetic modal wrappers are not native iPhone, Dynamic Type, VoiceOver or WKWebView evidence. Preview files, logs and export remain ignored.
+
+Separate sequential correctness/security and UI/accessibility reviews followed final passing validation. Both found **no actionable issue** in the 13-file refinement. They checked published font availability and native preview limits, static CSS/whitelist safety, unchanged CSP/storage/settlement, meaningful reflow tests, one-modal navigation, selected state, targets, wrapping and frozen scope. Reviews were read-only; they do not establish native font metrics, offline WKWebView rendering or VoiceOver behavior. Library/Contents, chapter marks, pending indicators, Continue, management disclosure, Stowaway/Classic palettes, reader chrome and Light/Paper/Dark colors are unchanged. No source traffic/policy change, schema change, dependency change, PR, merge or S2B work.
+
+Exact font-refinement files (13):
+
+- `docs/UI_UX_Implementation.md`
+- `docs/UI_UX_Device_Checklist.md`
+- `src/domain/types.ts`
+- `src/domain/preferences.ts`
+- `src/reader/appearance.ts`
+- `src/reader/bridge.ts`
+- `src/ui/appearance-modal.tsx`
+- `src/ui/reader-chrome.tsx`
+- `src/ui/reading-fonts.tsx`
+- `tests/bridge.test.ts`
+- `tests/template.test.ts`
+- `tests/ui-components.test.tsx`
+- `tests/integration/i3-ui.test.tsx`
+
+The earlier refinement below remains a historical record; this section supersedes its four-button font grid and four-choice list.
+
 ## Physical-feedback refinement — 8 October 2026
 
 Owen's iPhone review has begun. His feedback describes the first candidate as cleaner and more usable, but too utilitarian. This is a focused refinement on `8e9eed0893220f2e0aebf088fe992021db6d1004`, on the same branch. The explicit refinement request supersedes the original specification's deferred font/Paper and non-persisted shell-profile decisions. Physical UI acceptance remains pending; no PR, merge or S2B work.
