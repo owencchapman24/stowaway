@@ -10,7 +10,7 @@ import { page, threadUrl } from './fixtures/spacebattles';
 
 type BridgeWindow = Window & typeof globalThis & {
   ReactNativeWebView: { postMessage: (raw: string) => void };
-  StowawayReader: { flush: () => void; restyle: (size: number, theme: string) => void; setInteractionEnabled: (enabled: boolean) => void;
+  StowawayReader: { flush: () => void; restyle: (size: number, theme: string, font?: string) => void; setInteractionEnabled: (enabled: boolean) => void;
     prepareForExit: (handoffId: string) => void };
 };
 const bridgeWindow = window as BridgeWindow;
@@ -32,6 +32,7 @@ beforeEach(() => {
   documentListeners = new Map();
   cleanups = [];
   document.documentElement.style.setProperty('--font-size', '20px');
+  document.documentElement.dataset.font = 'georgia'; document.documentElement.dataset.theme = 'light';
   document.body.innerHTML = `<main id="chapter"><p id="block-0001" data-block>First</p>
     <details id="block-0002" data-block><summary id="block-0003" data-block>Outer</summary>
     <details id="block-0004" data-block><summary>Inner</summary><p id="block-0005" data-block>Target paragraph</p>
@@ -125,6 +126,37 @@ function sampleAt(top: number) {
   gesture('touchstart', { isTrusted: true }); window.scrollTo(0, top); bridgeWindow.StowawayReader.flush();
   return messages.filter((message) => message.type === 'position').at(-1)!.locator!;
 }
+
+test.each(['palatino', 'serif', 'sans'])('font %s reflow restores a deep semantic paragraph, not progression, without transient saves or Read completion', (font) => {
+  const canonical = importedLayout(Array.from({ length: 100 }, (_, i) => `<p>Generated paragraph ${i}.</p>`).join(''),
+    (_element, index) => index === 0 ? [0, 6000] : [(index - 1) * 60, 42]);
+  Array.from(document.querySelectorAll<HTMLElement>('p[data-block]')).forEach((element, index) => {
+    element.getBoundingClientRect = () => {
+      const step = ({ palatino: 76, serif: 66, sans: 54 } as Record<string, number>)[document.documentElement.dataset.font!] ?? 60;
+      const top = 24 + index * step + (step === 60 ? 0 : index % 5 * 2) - y;
+      return { top, bottom: top + 42, height: 42 } as DOMRect;
+    };
+  });
+  const before = document.getElementById('chapter')!.innerHTML;
+  run(null); const sampled = sampleAt(3039);
+  expect(sampled).toMatchObject({ blockId: canonical.blockIds[51], offset: 15 });
+  bridgeWindow.StowawayReader.restyle(20, 'paper', font); jest.runAllTimers();
+  const step = ({ palatino: 76, serif: 66, sans: 54 } as Record<string, number>)[font]!;
+  expect(y).toBeCloseTo(24 + 50 * step + 15);
+  expect(Math.abs(y - sampled.progression * 11800)).toBeGreaterThan(200);
+  expect(messages.filter((message) => message.type === 'position')).toHaveLength(1);
+  expect(document.documentElement.dataset).toMatchObject({ theme: 'paper', font });
+  expect(completions()).toEqual([]); expect(document.getElementById('chapter')!.innerHTML).toBe(before);
+  bridgeWindow.StowawayReader.prepareForExit('font-handoff');
+  expect(messages.at(-1)).toMatchObject({ type: 'quiesced', handoffId: 'font-handoff' });
+});
+
+test('bridge rejects unknown font and theme before starting layout or flushing', () => {
+  run(null); const before = [...messages];
+  bridgeWindow.StowawayReader.restyle(20, 'paper', 'url(https://invalid.example)');
+  bridgeWindow.StowawayReader.restyle(20, 'unknown', 'palatino');
+  expect(messages).toEqual(before); expect(document.documentElement.dataset.font).toBe('georgia');
+});
 
 test.each([14, 32])('hardening: imported paragraph gap anchors locally through font size %s', (size) => {
   const canonical = importedLayout(Array.from({ length: 100 }, (_, i) => `<p>Generated line ${i}.</p>`).join(''),

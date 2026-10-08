@@ -1,5 +1,7 @@
 import type { Chapter, Locator, Preferences } from '../domain/types';
 import { escapeHtml } from '../content/sanitize';
+import { normalizePreferences } from '../domain/preferences';
+import { READER_FONT_STACKS } from './appearance';
 import { POSITION_BRIDGE } from './bridge';
 
 function scriptJson(value: unknown): string {
@@ -8,18 +10,21 @@ function scriptJson(value: unknown): string {
 }
 
 export function readerDocument(chapter: Chapter, locator: Locator | null, preferences: Preferences, session: string): string {
+  const prefs = normalizePreferences(preferences);
   const config = scriptJson({ chapterId: chapter.id, contentHash: chapter.contentHash, session, locator });
   // session is an app-generated UUID, never source input.
   if (!/^[a-f0-9-]{36}$/.test(session)) throw new Error('Invalid reader session.');
-  return `<!doctype html><html lang="en" data-theme="${preferences.theme}"><head>
+  return `<!doctype html><html lang="en" data-theme="${prefs.theme}" data-font="${prefs.font}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${session}'; style-src 'nonce-${session}'; img-src 'self' file:; connect-src 'none'; font-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>${escapeHtml(chapter.title)}</title>
 <style nonce="${session}">
-:root { --font-size: ${preferences.fontSize}px; --paper:#fcf9f2; --ink:#242424; --link:#1d5e96; color-scheme:light; }
+:root { --font-size: ${prefs.fontSize}px; --paper:#fcf9f2; --ink:#242424; --link:#1d5e96; color-scheme:light; }
+:root[data-theme="paper"] { --paper:#eee8dd; --ink:#332e27; --link:#6b512e; color-scheme:light; }
+${Object.entries(READER_FONT_STACKS).map(([font, stack]) => `:root[data-font="${font}"] { --reader-font:${stack}; }`).join("\n")}
 :root[data-theme="dark"] { --paper:#15191e; --ink:#e8e5dd; --link:#9ac4ff; color-scheme:dark; }
 html { background:var(--paper); color:var(--ink); font-size:var(--font-size); overflow-anchor:none; scroll-behavior:auto; }
-body { margin:0 auto; max-width:46rem; padding:24px 22px 48px; font-family:Georgia,serif; line-height:1.65; overflow-wrap:anywhere; -webkit-text-size-adjust:100%; }
+body { margin:0 auto; max-width:46rem; padding:24px 22px 48px; font-family:var(--reader-font, Georgia, serif); line-height:1.65; overflow-wrap:anywhere; -webkit-text-size-adjust:100%; }
 p { margin:0 0 1em; } h1,h2,h3,h4,h5,h6 { line-height:1.25; margin:1.2em 0 .7em; }
 h1 { font-size:1.5em; } h2 { font-size:1.3em; } h3 { font-size:1.15em; }
 blockquote { border-left:3px solid var(--link); margin:1em 0; padding-left:1em; }

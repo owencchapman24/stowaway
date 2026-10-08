@@ -68,7 +68,7 @@ beforeEach(async () => {
   await repo.reconcileManifest(id, metadata, manifest(['101', '102', '103']), 1);
   chapter = (await repo.getChapter(`${id}:post:102`))!;
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: id, chapter: chapter.id });
-  jest.mocked(useStorage).mockReturnValue({ repository: repo, preferences: { theme: 'light', fontSize: 20 },
+  jest.mocked(useStorage).mockReturnValue({ repository: repo, appStyle: 'stowaway', changeAppStyle: jest.fn(), preferences: { theme: 'light', fontSize: 20 },
     changePreferences: jest.fn(), imageWarning: null });
   jest.mocked(createRenderFile).mockResolvedValue({ uri: 'file:///generated/index.html', readAccess: 'file:///generated/',
     directory: { exists: false, delete: jest.fn() } } as unknown as Awaited<ReturnType<typeof createRenderFile>>);
@@ -351,7 +351,8 @@ test('opening Library/Contents is local/read-only and shows current unread inclu
   const library = render(<Library />); await waitFor(() => expect(screen.getByText(/· 3 unread$/)).toBeTruthy());
   expect(screen.getByText('2 of 3 downloaded · 3 unread')).toBeTruthy(); library.unmount();
   render(<StoryContents />); await waitFor(() => expect(screen.getByText(/· 3 unread$/)).toBeTruthy());
-  expect(screen.getAllByText(/^Unread · (Downloaded|Not downloaded)$/)).toHaveLength(4); expect(screen.getByLabelText('Read Generated 103')).toBeDisabled();
+  expect(screen.getAllByText('○')).toHaveLength(4);
+  for (const row of screen.getAllByLabelText(/^Read Generated [0-9]+$/)) expect(row.props.accessibilityValue.text).toMatch(/Unread · (Downloaded|Not downloaded)$/); expect(screen.getByLabelText('Read Generated 103')).toBeDisabled();
   expect(screen.getByLabelText('Mark Generated 103 as read')).toBeEnabled(); expect(screen.getByLabelText('Mark Generated 104 as read')).toBeEnabled();
   expect(write).not.toHaveBeenCalled(); expect(automatic).not.toHaveBeenCalled(); expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();
 });
@@ -660,7 +661,7 @@ test('UI appearance persists preferences through the existing restyle flow witho
   const save = jest.spyOn(repo, 'saveLocator'), read = jest.spyOn(repo, 'markChapterRead');
   jest.mocked(useStorage).mockImplementation(function useTestStorage() {
     const [preferences, setPreferences] = useState<Preferences>({ theme: 'light', fontSize: 20 });
-    return { repository: repo, preferences, imageWarning: null, changePreferences: async (value) => { await repo.savePreferences(value); setPreferences(value); } };
+    return { repository: repo, appStyle: 'stowaway', changeAppStyle: jest.fn(), preferences, imageWarning: null, changePreferences: async (value) => { await repo.savePreferences(value); setPreferences(value); } };
   });
   const commands: string[] = [];
   mockInject = (script) => { commands.push(script); acknowledge(script); };
@@ -670,7 +671,7 @@ test('UI appearance persists preferences through the existing restyle flow witho
   expect(screen.getByRole('header', { name: 'Reading Appearance' })).toBeTruthy();
   fireEvent.press(screen.getByLabelText('Increase reading font size'));
   await waitFor(() => expect(screen.getByLabelText('Reading font size 22')).toBeTruthy());
-  expect(commands.some((command) => command.includes('restyle(22, "light")'))).toBe(true);
+  expect(commands.some((command) => command.includes('restyle(22, "light", "georgia")'))).toBe(true);
   expect(screen.getByLabelText('Increase reading font size')).toBeDisabled();
   const ready = () => screen.getByTestId('reader-web', { includeHiddenElements: true }).props.onMessage({ nativeEvent: { data: JSON.stringify({
     type: 'ready', session, chapterId: chapter.id, contentHash: chapter.contentHash,
@@ -678,8 +679,17 @@ test('UI appearance persists preferences through the existing restyle flow witho
   act(ready);
   fireEvent.press(screen.getByLabelText('Use dark reading theme'));
   await waitFor(() => expect(screen.getByLabelText('Use dark reading theme').props.accessibilityState.selected).toBe(true));
-  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 22 });
-  expect(commands.some((command) => command.includes('restyle(22, "dark")'))).toBe(true);
+  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 22, font: 'georgia' });
+  expect(commands.some((command) => command.includes('restyle(22, "dark", "georgia")'))).toBe(true);
+  act(ready);
+  fireEvent.press(screen.getByLabelText('Use palatino reading font'));
+  await waitFor(() => expect(screen.getByLabelText('Use palatino reading font').props.accessibilityState.selected).toBe(true));
+  expect(commands.some((command) => command.includes('restyle(22, "dark", "palatino")'))).toBe(true);
+  expect(screen.getByLabelText('Use sans reading font')).toBeDisabled();
+  act(ready); fireEvent.press(screen.getByLabelText('Use paper reading theme'));
+  await waitFor(() => expect(screen.getByLabelText('Use paper reading theme').props.accessibilityState.selected).toBe(true));
+  expect(await repo.getPreferences()).toEqual({ theme: 'paper', fontSize: 22, font: 'palatino' });
+  expect(commands.some((command) => command.includes('restyle(22, "paper", "palatino")'))).toBe(true);
   act(ready); fireEvent.press(screen.getByLabelText('Close reading appearance'));
   expect(await repo.getLocator(chapter.id)).toEqual(locator);
   expect(save).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled();

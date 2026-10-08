@@ -18,25 +18,26 @@ export function AppText({ children, tone = 'body', style }: {
   return <Text style={[typeStyles[tone], { color: tone === 'body' ? theme.textPrimary : theme.textSecondary }, style]}>{children}</Text>;
 }
 export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'destructive';
-export function Button({ label, text, disabled = false, variant = 'secondary', onPress, selected }: {
-  label: string; text: string; disabled?: boolean; variant?: ButtonVariant; onPress: () => void; selected?: boolean;
+export function Button({ label, text, disabled = false, variant = 'secondary', onPress, selected, expanded, quiet = false, icon = false }: {
+  label: string; text: string; disabled?: boolean; variant?: ButtonVariant; onPress: () => void; selected?: boolean; expanded?: boolean; quiet?: boolean; icon?: boolean;
 }) {
   const theme = useTheme();
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, ...(selected === undefined ? {} : { selected }) }}
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, ...(selected === undefined ? {} : { selected }), ...(expanded === undefined ? {} : { expanded }) }}
     disabled={disabled} onPress={onPress} style={({ pressed }) => [uiStyles.button, {
+      paddingHorizontal: icon ? 8 : 14, flexShrink: icon ? 0 : 1,
       backgroundColor: variant === 'primary' ? (pressed ? theme.accentPressed : theme.accent)
         : pressed || selected ? theme.accentSoft : variant === 'secondary' ? theme.surfaceSubtle : 'transparent',
       borderColor: variant === 'destructive' ? theme.destructive : 'transparent', borderWidth: 1, opacity: disabled ? .45 : 1,
-    }]}><Text style={[typeStyles.body, { fontWeight: '600', textAlign: 'center', color: variant === 'primary' ? theme.onAccent
-      : variant === 'destructive' ? theme.destructive : theme.accent }]}>{selected ? '✓ ' : ''}{text}</Text></Pressable>;
+    }]}><Text style={[typeStyles.body, { fontSize: quiet ? 15 : 17, fontWeight: quiet ? '400' : '600', textAlign: 'center', color: variant === 'primary' ? theme.onAccent
+      : variant === 'destructive' ? theme.destructive : quiet ? theme.textSecondary : theme.accent }]}>{selected ? '✓ ' : ''}{text}</Text></Pressable>;
 }
-export function ScreenHeader({ title, large = false, back, action }: {
-  title: string; large?: boolean; back?: ReactNode; action?: ReactNode;
+export function ScreenHeader({ title, large = false, display = false, back, action }: {
+  title: string; large?: boolean; display?: boolean; back?: ReactNode; action?: ReactNode;
 }) {
   const theme = useTheme();
   return <View style={{ gap: 12 }}>{back && <View style={{ alignItems: 'flex-start' }}>{back}</View>}
     <View style={uiStyles.header}><Text accessibilityRole="header" style={{ flex: 1, color: theme.textPrimary,
-      fontSize: large ? 34 : 28, fontWeight: '700' }}>{title}</Text>{action}</View>
+      fontFamily: large || display ? theme.displayFont : undefined, fontSize: large ? 34 : 28, fontWeight: theme.displayFont && (large || display) ? '400' : '700' }}>{title}</Text>{action}</View>
   </View>;
 }
 export function SectionHeader({ children }: { children: ReactNode }) {
@@ -45,7 +46,7 @@ export function SectionHeader({ children }: { children: ReactNode }) {
 }
 export function Card({ children }: { children: ReactNode }) {
   const theme = useTheme();
-  return <View style={[uiStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</View>;
+  return <View style={[uiStyles.card, { backgroundColor: theme.surface, borderColor: theme.border, borderRadius: theme.cardRadius }]}>{children}</View>;
 }
 export function InlineBanner({ title, message, tone = 'info', children }: {
   title?: string; message?: string; tone?: 'info' | 'success' | 'warning' | 'error'; children?: ReactNode;
@@ -83,8 +84,8 @@ export function StoryRow({ story, onPress }: { story: StorySummary; onPress(): v
   const theme = useTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={`Open ${story.title}`}
     accessibilityValue={{ text: [story.author, storySummary(story)].filter(Boolean).join('. ') }} onPress={onPress}
-    style={({ pressed }) => [uiStyles.listRow, { backgroundColor: pressed ? theme.accentSoft : theme.surface, borderColor: theme.border }]}>
-    <View style={uiStyles.flex}><Text style={[typeStyles.rowTitle, { color: theme.textPrimary }]}>{story.title}</Text>
+    style={({ pressed }) => [uiStyles.listRow, { backgroundColor: pressed ? theme.accentSoft : theme.profile === 'stowaway' ? theme.canvas : theme.surface, borderColor: theme.border }]}>
+    <View style={uiStyles.flex}><Text style={[typeStyles.rowTitle, { color: theme.textPrimary, fontFamily: theme.displayFont, fontSize: theme.displayFont ? 20 : 17, lineHeight: theme.displayFont ? 26 : 22, fontWeight: theme.displayFont ? '400' : '600' }]}>{story.title}</Text>
       {story.author && <AppText tone="secondary">{story.author}</AppText>}<AppText tone="secondary">{storySummary(story)}</AppText></View>
     <Text accessible={false} style={{ color: theme.textSecondary, fontSize: 24 }}>›</Text>
   </Pressable>;
@@ -93,8 +94,8 @@ export function ContinueReadingCard({ target, disabled = false, onPress }: { tar
   const theme = useTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={`Continue Reading: ${target.storyTitle}, ${target.chapterTitle}${target.currentlyListed ? '' : ', Saved chapter no longer listed'}`}
     accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
-    style={({ pressed }) => [uiStyles.card, { backgroundColor: pressed ? theme.surfaceSubtle : theme.accentSoft, borderColor: theme.border, opacity: disabled ? .45 : 1 }]}>
-    <Text style={[typeStyles.rowTitle, { color: theme.textPrimary }]}>{target.storyTitle}</Text>
+    style={({ pressed }) => [uiStyles.card, { backgroundColor: pressed ? theme.surfaceSubtle : theme.accentSoft, borderColor: theme.border, borderRadius: theme.cardRadius, padding: theme.profile === 'stowaway' ? 20 : 16, opacity: disabled ? .45 : 1 }]}>
+    <Text style={[typeStyles.rowTitle, { color: theme.textPrimary, fontFamily: theme.displayFont, fontSize: theme.displayFont ? 24 : 17, lineHeight: theme.displayFont ? 30 : 22, fontWeight: theme.displayFont ? '400' : '600' }]}>{target.storyTitle}</Text>
     <AppText tone="secondary">{target.chapterTitle}</AppText>
     {!target.currentlyListed && <AppText tone="caption">Saved chapter no longer listed</AppText>}
     <Text style={[typeStyles.body, { color: theme.accent, fontWeight: '600' }]}>Continue Reading ›</Text>
@@ -105,16 +106,22 @@ export function ChapterRow({ entry, saved = false, disabled, readingDisabled = f
 }) {
   const theme = useTheme();
   const state = `${entry.isRead ? 'Read' : 'Unread'} · ${entry.downloaded ? 'Downloaded' : 'Not downloaded'}`;
-  return <View style={[uiStyles.chapter, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+  return <View style={[uiStyles.chapter, { borderColor: theme.border }]}>
     <Pressable accessibilityRole="button" accessibilityLabel={`Read ${entry.title}`}
       accessibilityValue={{ text: `${saved ? 'Saved chapter no longer listed' : 'Chapter ' + (entry.position + 1)}. ${state}` }}
       accessibilityState={{ disabled: disabled || readingDisabled || !entry.downloaded }} disabled={disabled || readingDisabled || !entry.downloaded} onPress={onOpen}
       style={({ pressed }) => [uiStyles.chapterTarget, { backgroundColor: pressed ? theme.accentSoft : 'transparent', opacity: disabled ? .55 : 1 }]}>
-      <Text style={[typeStyles.rowTitle, { color: theme.textPrimary }]}>{saved ? entry.title : `${entry.position + 1}. ${entry.title}`}</Text>
-      <AppText tone="caption">{state}</AppText>
+      {!saved && <Text style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 22, minWidth: 24 }}>{entry.position + 1}</Text>}
+      <View style={{ flex: 1, gap: 4 }}><Text style={[typeStyles.rowTitle, { color: theme.textPrimary, fontWeight: '500' }]}>{entry.title}</Text>
+        {!entry.downloaded && <AppText tone="caption">↓ Not downloaded</AppText>}
+      </View>
     </Pressable>
-    <Button label={`Mark ${entry.title} as ${entry.isRead ? 'unread' : 'read'}`} text={entry.isRead ? '✓ Read' : '○ Unread'}
-      variant="tertiary" disabled={disabled} onPress={onToggle} />
+    <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${entry.title} as ${entry.isRead ? 'unread' : 'read'}`}
+      accessibilityState={{ disabled }} disabled={disabled} onPress={onToggle}
+      style={({ pressed }) => ({ minWidth: 44, minHeight: 44, padding: 8, justifyContent: 'center', alignItems: 'center',
+        borderRadius: 10, backgroundColor: pressed ? theme.accentSoft : 'transparent', opacity: disabled ? .45 : 1 })}>
+      <Text style={{ color: theme.textSecondary, fontSize: 18 }}>{entry.isRead ? '✓' : '○'}</Text>
+    </Pressable>
   </View>;
 }
 export const uiStyles = StyleSheet.create({
@@ -128,8 +135,8 @@ export const uiStyles = StyleSheet.create({
   loading: { padding: 12, gap: 8, alignItems: 'center' },
   listRow: { minHeight: 56, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   flex: { flex: 1, gap: 4 },
-  chapter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, paddingRight: 4 },
-  chapterTarget: { flexGrow: 1, flexShrink: 1, flexBasis: 180, minHeight: 56, minWidth: 44, padding: 12, gap: 4 },
+  chapter: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
+  chapterTarget: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', minHeight: 56, minWidth: 44, paddingVertical: 14, paddingRight: 8, gap: 12 },
 });
 const typeStyles = StyleSheet.create({
   body: { fontSize: 17, lineHeight: 24 }, secondary: { fontSize: 15, lineHeight: 20 }, caption: { fontSize: 13, lineHeight: 18 }, rowTitle: { fontSize: 17, fontWeight: '600', lineHeight: 22 },

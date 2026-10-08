@@ -1,5 +1,5 @@
 import { AppState, Linking, type AppStateStatus } from 'react-native';
-import { fireEvent, render, screen, waitFor, act } from '@testing-library/react-native';
+import { fireEvent, render, screen, within, waitFor, act } from '@testing-library/react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Library from '../src/app/index';
 import AddStory from '../src/app/add-story';
@@ -152,7 +152,9 @@ test('contents preserves order, gates missing bodies, offers resume and opens so
   const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
   render(<StoryContents />);
   await waitFor(() => expect(screen.getByLabelText('Read First')).toBeTruthy());
-  expect(screen.getByText('1. First')).toBeTruthy(); expect(screen.getByText('2. Second')).toBeTruthy();
+  expect(screen.getByLabelText('Read First').props.accessibilityValue.text).toMatch(/^Chapter 1\./);
+  expect(screen.getByLabelText('Read Second').props.accessibilityValue.text).toMatch(/^Chapter 2\./);
+  expect(within(screen.getByLabelText('Read First')).getByText('First')).toBeTruthy(); expect(within(screen.getByLabelText('Read Second')).getByText('Second')).toBeTruthy();
   expect(screen.getByLabelText('Read Second')).toBeDisabled();
   fireEvent.press(screen.getByLabelText('Read Second')); expect(router.push).not.toHaveBeenCalled();
   fireEvent.press(screen.getByLabelText('Read First'));

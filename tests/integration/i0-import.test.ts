@@ -62,7 +62,7 @@ test('actual v1 migration preserves fixture bodies/IDs, locator, settings and as
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 3 });
   expect(await host.db.getAllAsync('SELECT * FROM chapters ORDER BY id')).toEqual(bodies);
   expect(await repo.getLocator(chapter.id)).toEqual(locator);
-  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 26 });
+  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 26, font: 'georgia' });
   expect(await repo.getChapterAssetPath(chapter.id)).toBe(asset.relativePath);
   expect(await repo.listStories()).toMatchObject([{ id: fixture.id, total: 3, downloaded: 3 }]);
   expect((await repo.listContents(fixture.id)).map((e) => e.title)).toContain('Renamed old chapter');

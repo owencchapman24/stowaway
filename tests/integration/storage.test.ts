@@ -9,6 +9,7 @@ import { hostSqlite } from './host-sqlite';
 import { exclusiveTransaction } from '../../src/storage/database';
 import { PositionSession } from '../../src/reader/position';
 import { ReadCompletion } from '../../src/reader/read-state';
+import { READER_FONTS } from '../../src/domain/preferences';
 
 const digest = async (value: string) => createHash('sha256').update(value).digest('hex');
 const asset = { relativePath: 'assets/11111111-1111-4111-8111-111111111111.png', byteLength: 2024 };
@@ -23,6 +24,41 @@ afterEach(() => {
   host.close();
   if (!folder.startsWith(join(tmpdir(), 'stowaway-s0-'))) throw new Error('Unexpected test directory.');
   rmSync(folder, { recursive: true, force: true });
+});
+
+test.each([1, 6])('appearance preferences evolve legacy JSON without migrating schema v%s', async (version) => {
+  host.close(); host = hostSqlite(join(folder, 'appearance.db')); await migrate(host.db, version);
+  let repo = createRepository(host.db);
+  expect(await repo.getAppStyle()).toBe('stowaway');
+  expect(await repo.getPreferences()).toEqual({ theme: 'light', fontSize: 20, font: 'georgia' });
+  await host.db.runAsync('INSERT INTO settings(key, value) VALUES (?, ?)', 'reading', JSON.stringify({ theme: 'dark', fontSize: 28 }));
+  const legacy = await host.db.getAllAsync('SELECT * FROM settings');
+  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 28, font: 'georgia' });
+  expect(await host.db.getAllAsync('SELECT * FROM settings')).toEqual(legacy); // Reading defaults does not rewrite old settings.
+  await repo.saveAppStyle('classic');
+  expect(await host.db.getFirstAsync('SELECT * FROM settings WHERE key = ?', 'reading')).toEqual(legacy[0]);
+  for (const font of READER_FONTS) {
+    await repo.savePreferences({ theme: 'paper', fontSize: 24, font });
+    host.close(); host = hostSqlite(join(folder, 'appearance.db')); repo = createRepository(host.db);
+    expect(await repo.getPreferences()).toEqual({ theme: 'paper', fontSize: 24, font });
+    expect(await repo.getAppStyle()).toBe('classic');
+    expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: version });
+  }
+  const reading = await repo.getPreferences(); await repo.saveAppStyle('stowaway');
+  expect(await repo.getPreferences()).toEqual(reading);
+  host.failNextCommit(); await expect(repo.saveAppStyle('classic')).rejects.toThrow();
+  expect(await repo.getAppStyle()).toBe('stowaway');
+});
+
+test('unknown appearance values resolve safely without rewriting persisted settings', async () => {
+  const repo = createRepository(host.db);
+  await host.db.runAsync('INSERT INTO settings(key, value) VALUES (?, ?)', 'reading', JSON.stringify({ theme: 'dark', fontSize: 26, font: 'url(https://invalid.example/font)' }));
+  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 26, font: 'georgia' });
+  await host.db.runAsync('UPDATE settings SET value = ? WHERE key = ?', '{broken', 'reading');
+  expect(await repo.getPreferences()).toEqual({ theme: 'light', fontSize: 20, font: 'georgia' });
+  await host.db.runAsync('INSERT INTO settings(key, value) VALUES (?, ?)', 'app-style', 'unknown');
+  expect(await repo.getAppStyle()).toBe('stowaway');
+  expect(await host.db.getFirstAsync('SELECT value FROM settings WHERE key = ?', 'app-style')).toEqual({ value: 'unknown' });
 });
 
 test.each([false, true])('hardening: real locator rollback cannot resurrect older progress; Read saves independently (newer fails=%s)', async (newerFails) => {
@@ -79,7 +115,7 @@ test('repeat migration/seed/reopen preserves a single story, three bodies, locat
   expect(await repo.listChapters()).toHaveLength(3);
   expect(await repo.getLocator(chapter.id)).toEqual(locator);
   expect(await repo.getLastChapter()).toBe(chapter.id);
-  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 28 });
+  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 28, font: 'georgia' });
   expect(await repo.getChapter(chapter.id)).toMatchObject({ html: chapter.html, contentHash: chapter.contentHash,
     sanitizerVersion: chapter.sanitizerVersion, blockIds: chapter.blockIds });
 });

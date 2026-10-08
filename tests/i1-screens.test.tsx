@@ -1,5 +1,5 @@
 import { AppState, type AppStateStatus } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import StoryContents from '../src/app/story';
@@ -80,7 +80,8 @@ test('current primary and readable saved-unlisted content render as separate gro
   repository.listSavedUnlisted.mockResolvedValue([entry('101', 'Saved first')]);
   render(<StoryContents />);
   await waitFor(() => expect(screen.getByText('Saved chapters no longer listed')).toBeTruthy());
-  expect(screen.getByText('Chapters')).toBeTruthy(); expect(screen.getByText('1. Current second')).toBeTruthy();
+  expect(screen.getByText('Chapters')).toBeTruthy(); expect(within(screen.getByLabelText('Read Current second')).getByText('Current second')).toBeTruthy();
+  expect(screen.getByLabelText('Read Current second').props.accessibilityValue.text).toMatch(/^Chapter 1\./);
   expect(screen.getByLabelText('Read Pending current')).toBeDisabled(); expect(screen.getByLabelText('Read Saved first')).toBeEnabled();
   fireEvent.press(screen.getByLabelText('Read Saved first'));
   expect(router.push).toHaveBeenCalledWith({ pathname: '/reader', params: { chapter: `${story.id}:post:101` } });

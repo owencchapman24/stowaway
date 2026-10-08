@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Alert, AppState } from 'react-native';
+import { Alert, AppState, FlatList } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import StoryContents from '../../src/app/story';
@@ -60,7 +60,7 @@ beforeEach(async () => {
   await repo.commitInitialManifest(metadata, manifest); await repo.commitInitialManifest(other, manifest);
   await repo.commitDownloadedChapter(id, '101', await prepareContent('<p>Synthetic first.</p>', digest));
   await repo.setEntryRead(id, '101', true);
-  jest.mocked(useStorage).mockReturnValue({ repository: repo, preferences: { theme: 'light', fontSize: 20 }, changePreferences: jest.fn(), imageWarning: null });
+  jest.mocked(useStorage).mockReturnValue({ repository: repo, appStyle: 'stowaway', changeAppStyle: jest.fn(), preferences: { theme: 'light', fontSize: 20 }, changePreferences: jest.fn(), imageWarning: null });
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: id });
   jest.mocked(manageNativeStory).mockImplementation((story, action, repository, onSettled) => repository.manageStory(story, action, { cleanup: async () => {}, onSettled }));
   jest.mocked(cleanupNativeStoryFiles).mockResolvedValue(undefined);
@@ -75,6 +75,26 @@ async function ready() { const view = render(<StoryContents />); await waitFor((
 function handler(label: string): () => void { return retainedPress(label); }
 function confirmation(text: string) { const call = jest.mocked(Alert.alert).mock.calls.at(-1)!; const button = call[2]!.find((button) => button.text === text)!; expect(button).toBeTruthy(); act(() => button.onPress?.()); }
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
+
+test('400-chapter Contents stays virtualized and one header disclosure reaches the same maintenance actions', async () => {
+  await repo.reconcileManifest(id, metadata, { state: 'COMPLETE', entries: Array.from({ length: 400 }, (_, i) => ({
+    postId: String(101 + i), title: 'Generated chapter ' + (i + 1), url: 'https://forums.spacebattles.com/posts/' + (101 + i) + '/',
+  })) }, 10);
+  const body = jest.spyOn(repo, 'getChapter');
+  const view = await ready(); const list = () => view.UNSAFE_getByType(FlatList);
+  expect(list().props.data).toHaveLength(400); expect(body).not.toHaveBeenCalled();
+  expect(screen.getAllByLabelText(/^Read Generated chapter/).length).toBeLessThan(400);
+  expect(list().props.ListFooterComponent).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Show story actions'));
+  expect(screen.getByLabelText('Hide story actions').props.accessibilityState.expanded).toBe(true);
+  expect(list().props.ListFooterComponent).toBeNull();
+  for (const label of ['Check for Updates', 'Download Images', 'Open story source in browser', downloadLabel, storyLabel]) {
+    expect(screen.getAllByLabelText(label)).toHaveLength(1); expect(screen.getByLabelText(label)).toBeEnabled();
+  }
+  fireEvent.press(screen.getByLabelText(downloadLabel)); expect(alert).toHaveBeenCalledTimes(1); confirmation('Cancel');
+  fireEvent.press(screen.getByLabelText('Hide story actions')); expect(list().props.ListFooterComponent).toBeTruthy();
+  expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();
+});
 
 test('opening screens is local-only; downloads cancellation retains body/read and confirms exact story + retained metadata contract', async () => {
   await ready(); expect(manageNativeStory).not.toHaveBeenCalled(); expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();

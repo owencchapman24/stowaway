@@ -4,6 +4,82 @@
 
 S0, S1 and S2A are accepted; I0–I4 are merged/accepted. The whole-repository Astra audit is complete. Pre-UI hardening is merged in PR #9 and passed Owen's focused phone retest, within [its recorded limits](Pre_UI_Hardening.md). S2B remains deferred; full v0 remains incomplete. No PR creation or merge belongs to this pass.
 
+## Physical-feedback refinement — 8 October 2026
+
+Owen's iPhone review has begun. His feedback describes the first candidate as cleaner and more usable, but too utilitarian. This is a focused refinement on `8e9eed0893220f2e0aebf088fe992021db6d1004`, on the same branch. The explicit refinement request supersedes the original specification's deferred font/Paper and non-persisted shell-profile decisions. Physical UI acceptance remains pending; no PR, merge or S2B work.
+
+The refinement retains controllers, the existing list, ownership and reader protocols; extends shared profile tokens and existing settings; adds fixed offline font choices/Paper to the restyle path; moves maintenance out of normal chapter scanning; and validates with host SQLite, emulated geometry, component previews and a separate sequential review.
+
+**App Style:** `AppStyle = 'stowaway' | 'classic'`, stored independently under `settings['app-style']`. Missing/unknown values resolve to Stowaway without rewriting storage. StorageProvider loads/persists it and supplies a small presentation context. There is no migration, global state library or settings route. Selection applies after a successful local write. A rejected write triggers an authoritative preference read while the selection gate remains held: a committed choice applies, a retained choice offers retry, and an unreadable outcome reports uncertainty without promising rollback. A Library-footer control opens App Style, distinctly separate from Reading Appearance.
+
+**Profiles:** one structured palette/profile object and the same screens/components. Stowaway uses warm ivory, warm navy, muted brass, softer secondary ink, flatter shelf rows, softer card corners and more generous Continue card spacing. Library/story/Continue display titles use Georgia on iOS and a platform serif fallback elsewhere. Controls, metadata, chapter titles and navigation stay sans-serif. Classic retains the earlier colors and system typography. No covers, imagery, textures, gradients, shadows, font packages or decorative motion.
+
+**Reader preferences:** existing `reading` JSON gains a font enum. Missing/unsupported font resolves to Georgia while valid legacy Light/Dark and size choices survive. Values are normalized at read/save/render/restyle boundaries. The typed font field is optional for legacy callers, including S2A; resolved reads include the default. Paper is an additional selection. App Style and reading settings never overwrite each other. Reads do not auto-rewrite JSON; schema v6 and isolated v1 remain unchanged.
+
+| Label | Fixed local CSS stack |
+| --- | --- |
+| Georgia | `Georgia, "Times New Roman", serif` |
+| Palatino | `Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif` |
+| Serif | `ui-serif, "Times New Roman", serif` |
+| Sans | `-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif` |
+
+These are local requests with generic fallbacks, not a guarantee that every named face exists. Apple's [font reference](https://developer.apple.com/fonts/system-fonts/) and the [CSS font-family specification](https://www.w3.org/TR/css3-fonts/) informed the choice. There is no remote request or `@font-face`; `font-src 'none'` remains. Paper uses `#EEE8DD` background, `#332E27` ink and `#6B512E` links. Existing Light/Dark colors, 14–32 range and default 20 remain.
+
+**Reflow:** normalized size/theme/font keys use the existing restyle method. The bridge validates them and retains snapshot → flush → layout-start → local attributes → semantic settle. Static app-owned CSS maps font keys; persisted strings never become arbitrary CSS. Route-owned ReadCompletion, session checks, locator ordering, quiescence and navigation functions are unchanged. New tests emulate nonuniform font geometry at a deep paragraph with nonzero offset, distinguish semantic restoration from progression fallback, and assert no transient save or Read completion.
+
+**Contents:** title/author, compact summary, Continue/Start/Resume, then Chapters. Normal rows omit download prose. A quiet number gutter and wrapped title lead; pending rows show `↓ Not downloaded`, while spoken state remains explicit. The visible 18-point ✓/○ sits in a separate minimum 44 × 44 Pressable and never navigates. The real FlatList remains. Maintenance is below chapters by default; the labeled header ellipsis brings that same single action group into a top disclosure. Controls are not duplicated. Updates/images/source/removal and the separate Danger Zone retain their callbacks, guards and confirmations. Exceptional progress/errors stay visible with Cancel.
+
+**Reader/accessibility:** smaller, lighter navigation text and hairline separators recede around independently themed prose. A shared modal wrapper retains heading focus, background accessibility isolation, scrolling and Done. Reading Appearance has a wrapping two-column font group, size controls and Light/Paper/Dark. Selections show a checkmark plus accessible selected state. No canonical content, hashes, blocks, image mappings, source policy, request pacing or D1–D4 behavior changes.
+
+Refinement validation on Node 22.23.3 / Windows:
+
+- `npm.cmd run check`: exit 0; TypeScript, ESLint and **741 tests in 30 suites passed** (28 additional cases over 713). No snapshots or timing-budget changes.
+- `npx.cmd expo install --check`: dependencies up to date; no dependency changes.
+- `npx.cmd expo-doctor@latest`: **21/21 passed**.
+- `npx.cmd expo export --platform ios`: exit 0; local iOS Hermes export, 24 assets.
+- `git diff --check`: passed; ordinary Windows LF/CRLF notices only.
+
+New coverage includes provider/repository profile reload/failure, commit-then-reject and unreadable style outcomes, all four shell/profile combinations and contrast, legacy/invalid preferences, font stacks/reflow, Paper independence, compact targets and 400-entry list/disclosure reachability. Earlier behavioral assertions remain; numbering/title assertions now inspect their row and spoken number, and exact legacy preferences include their resolved Georgia default. No assertion was weakened to obtain green results.
+
+Visual QA inspected Stowaway light/dark, Classic light, and 320-point compositions with explicitly emulated 1.5× shell text. These use actual shared React Native Web components with synthetic text. A contrast assertion found the inherited warning color below 4.5:1 on the warmer subtle surface; Stowaway's warning ink was darkened to `#8B5110`. The narrow preview exposed a wrapping three-dot action; a single ellipsis and non-shrinking icon target fixed it. Profiles retain one component tree. Previews/logs/export remain ignored artifacts. Mock prose panels are not reader-rendering evidence; this is not native Dynamic Type, VoiceOver, WKWebView, actual font availability or comfort evidence. No live SpaceBattles requests.
+
+Separate sequential correctness/security and visual/accessibility reviews followed passing validation. The correctness review found one LOW issue: App Style's original failure text promised the previous choice was retained without checking a possible committed write. The provider now reconciles the saved preference before releasing the caller's selection gate; an unreadable outcome uses neutral retry/reopen copy. Real host SQLite tests cover commit-then-reject and an unavailable reread, including reload consistency. No transaction abstraction or existing management reconciliation changed. After the final full check and iOS export passed, a narrow re-review confirmed the finding resolved with no actionable issue remaining. The visual/accessibility review found no actionable production issue. Native font metrics, reflow, VoiceOver, maximum Dynamic Type and long-list comfort remain physical validation.
+
+Exact refinement files (28):
+
+- `docs/UI_UX_Device_Checklist.md`
+- `docs/UI_UX_Implementation.md`
+- `src/app/index.tsx`
+- `src/app/story.tsx`
+- `src/domain/preferences.ts`
+- `src/domain/types.ts`
+- `src/reader/ChapterReader.tsx`
+- `src/reader/appearance.ts`
+- `src/reader/bridge.ts`
+- `src/reader/template.ts`
+- `src/storage/context.tsx`
+- `src/storage/repository.ts`
+- `src/ui/appearance-modal.tsx`
+- `src/ui/components.tsx`
+- `src/ui/reader-chrome.tsx`
+- `src/ui/theme.ts`
+- `tests/bridge.test.ts`
+- `tests/i0-screens.test.tsx`
+- `tests/i1-screens.test.tsx`
+- `tests/integration/appearance.test.tsx`
+- `tests/integration/i0-import.test.ts`
+- `tests/integration/i3-read-state.test.ts`
+- `tests/integration/i3-ui.test.tsx`
+- `tests/integration/i4-ui.test.tsx`
+- `tests/integration/s2a-recovery.test.ts`
+- `tests/integration/storage.test.ts`
+- `tests/template.test.ts`
+- `tests/ui-components.test.tsx`
+
+## First candidate implementation record
+
+The remainder records the original `8e9eed0` candidate. The refinement above supersedes its appearance choices.
+
 ## Plan and architecture
 
 The pre-implementation plan kept data loading, route keys, lifecycle refs, confirmations, operation ownership and mutation settlement in the existing controllers. Small components under `src/ui/` own rendering, accessibility and callbacks only. No repository write or source call moved into a row/card. The old Control/screenStyles remain available for the separate development diagnostics.

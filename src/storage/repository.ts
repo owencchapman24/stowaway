@@ -1,5 +1,5 @@
-import type { Chapter, ChapterSummary, Locator, Preferences, StoryMetadata, StorySummary, StoryContentsEntry, ReconciliationResult, ContinueReadingTarget } from '../domain/types';
-import { DEFAULT_PREFERENCES } from '../domain/types';
+import type { Chapter, ChapterSummary, Locator, Preferences, StoryMetadata, StorySummary, StoryContentsEntry, ReconciliationResult, ContinueReadingTarget, AppStyle } from '../domain/types';
+import { normalizePreferences } from '../domain/preferences';
 import { chapterId, storyId } from '../domain/identity';
 import { prepareContent } from '../content/sanitize';
 import { fixtureStory } from '../fixtures/story';
@@ -334,16 +334,24 @@ export function createRepository(db: SqlDatabase) {
     },
     async getPreferences(): Promise<Preferences> {
       const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', 'reading');
-      if (!row) return DEFAULT_PREFERENCES;
-      const parsed: Preferences = JSON.parse(row.value);
-      if ((parsed.theme !== 'light' && parsed.theme !== 'dark') || !Number.isFinite(parsed.fontSize) ||
-        parsed.fontSize < 14 || parsed.fontSize > 32) return DEFAULT_PREFERENCES;
-      return parsed;
+      if (!row) return normalizePreferences(null);
+      try { return normalizePreferences(JSON.parse(row.value)); }
+      catch { return normalizePreferences(null); }
     },
     async savePreferences(value: Preferences): Promise<void> {
       await write(async (tx) => {
         await tx.runAsync('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-          'reading', JSON.stringify(value));
+          'reading', JSON.stringify(normalizePreferences(value)));
+      });
+    },
+    async getAppStyle(): Promise<AppStyle> {
+      const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', 'app-style');
+      return row?.value === 'classic' ? 'classic' : 'stowaway';
+    },
+    async saveAppStyle(value: AppStyle): Promise<void> {
+      if (value !== 'stowaway' && value !== 'classic') throw new Error('Invalid app style.');
+      await write(async (tx) => {
+        await tx.runAsync('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', 'app-style', value);
       });
     },
     async getAssetPath(): Promise<string | null> {

@@ -4,6 +4,8 @@ import { Stack } from 'expo-router';
 import WebView from 'react-native-webview';
 import * as Crypto from 'expo-crypto';
 import type { Chapter, ChapterSummary, Preferences } from '../domain/types';
+import { normalizePreferences } from '../domain/preferences';
+import { READER_PAPER } from './appearance';
 import type { Repository } from '../storage/repository';
 import { createRenderFile } from '../storage/files';
 import { AppScreen, Button, InlineBanner, LoadingState } from '../ui/components';
@@ -210,10 +212,11 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     const current = modelRef.current;
     if (!current || !ready || exiting.current) return;
     setReady(false);
+    const next = normalizePreferences(value);
     try {
-      await changePreferences(value);
+      await changePreferences(next);
       if (modelRef.current === current && !webFailed.current) {
-        web.current?.injectJavaScript(`window.StowawayReader && window.StowawayReader.restyle(${value.fontSize}, ${JSON.stringify(value.theme)}); true;`);
+        web.current?.injectJavaScript(`window.StowawayReader && window.StowawayReader.restyle(${next.fontSize}, ${JSON.stringify(next.theme)}, ${JSON.stringify(next.font)}); true;`);
       }
     } catch {
       setReady(true);
@@ -254,7 +257,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     {!ready && !error && <LoadingState text="Restoring your passage…" />}
     {model && <WebView ref={web} source={{ uri: model.file.uri }}
       pointerEvents={settling ? 'none' : 'auto'}
-      style={[styles.reader, { opacity: ready ? 1 : 0, backgroundColor: preferences.theme === 'dark' ? '#15191e' : '#fcf9f2' }]}
+      style={[styles.reader, { opacity: ready ? 1 : 0, backgroundColor: READER_PAPER[normalizePreferences(preferences).theme] }]}
       allowingReadAccessToURL={model.file.readAccess}
       // Route every navigation through our callback. Whitelists alone can launch external URLs.
       originWhitelist={['*']}

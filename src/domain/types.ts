@@ -23,12 +23,16 @@ export interface Chapter extends ChapterSummary {
   links: Record<string, string>;
 }
 
+export type AppStyle = 'stowaway' | 'classic';
+export type ReaderFont = 'georgia' | 'palatino' | 'serif' | 'sans';
 export interface Preferences {
-  theme: 'light' | 'dark';
+  theme: 'light' | 'paper' | 'dark';
   fontSize: number;
+  /** Missing in legacy callers/settings; resolves to Georgia. */
+  font?: ReaderFont;
 }
 
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'light', fontSize: 20 };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'light', fontSize: 20, font: 'georgia' };
 
 export interface StoryMetadata {
   id: string;

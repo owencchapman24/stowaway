@@ -27,6 +27,7 @@ export default function StoryContents() {
 
 function Contents({ id }: { id: string }) {
   const { repository } = useStorage();
+  const [showActions, setShowActions] = useState(false);
   const [resume, setResume] = useState<ContinueReadingTarget | null>(null);
   const [refreshingForeign, setRefreshingForeign] = useState(false);
   const [refreshingFocus, setRefreshingFocus] = useState(false);
@@ -254,16 +255,44 @@ function Contents({ id }: { id: string }) {
       router.push({ pathname: '/reader', params: { chapter } });
     }
   }
+  const maintenance = story && <View style={{ marginTop: 32, gap: 24 }}>
+        {!!story.sourceUrl && <View style={{ gap: 8 }}>
+          <SectionHeader>Story Actions</SectionHeader>
+          {story.source === 'spacebattles' && <>
+            <View style={styles.actions}>
+              <Button label="Check for Updates" text="Check for Updates" variant="tertiary" disabled={busy} onPress={() => { void runOperation(); }} />
+              {!!imageSummary && (imageSummary.unknown > 0 || imageSummary.pending > 0 || imageSummary.local > 0 || !!imageSummary.mimeRetryable) &&
+                <Button label={imageAction} text={imageAction} variant="tertiary" disabled={busy} onPress={() => { void runOperation(true); }} />}
+              {!!readingTarget && story.downloaded < story.total && <Button label="Resume Download" text="Resume Download" variant="tertiary" disabled={busy} onPress={resumeDownload} />}
+            </View>
+            {imageSummary && <AppText tone="caption">{describeImages(imageSummary)}</AppText>}
+          </>}
+          <Button label="Open story source in browser" text="View Source" variant="tertiary" disabled={busy}
+            onPress={() => { if (canAct()) void Linking.openURL(story.sourceUrl).catch(() => { if (focused.current) setError('Could not open the source in your browser.'); }); }} />
+          {story.lastUpdateAttemptAt !== null && <AppText tone="caption">Last update attempt: {new Date(story.lastUpdateAttemptAt).toLocaleString()}</AppText>}
+          {story.lastUpdateSuccessAt !== null && <AppText tone="caption">Last complete check: {new Date(story.lastUpdateSuccessAt).toLocaleString()}</AppText>}
+          {story.source === 'spacebattles' && <><AppText tone="secondary">Free local storage while keeping this story, Read/Unread state, reading positions and update history.</AppText>
+            <Button label={'Remove downloads for ' + story.title} text="Remove Downloads" variant="destructive" disabled={busy} onPress={() => confirmManagement('downloads')} /></>}
+        </View>}
+        {story.source === 'spacebattles' && <View style={{ gap: 8 }}><SectionHeader>Danger Zone</SectionHeader>
+          <AppText tone="secondary">Remove this story and all of its Stowaway data from this device.</AppText>
+          <Button label={'Remove story ' + story.title + ' and all local state'} text="Remove Story" variant="destructive" disabled={busy} onPress={() => confirmManagement('story')} />
+        </View>}
+        {__DEV__ && !!imageOutcome?.mimeDiagnostics?.length && <View><SectionHeader>Development diagnostics</SectionHeader>
+          {imageOutcome.mimeDiagnostics.map((diagnostic) => <AppText tone="caption" key={diagnostic.chapterId + ':' + diagnostic.slot}>
+            {'Image MIME (dev): ' + diagnostic.chapterId + ' · slot ' + (diagnostic.slot + 1) + ' · received ' + (diagnostic.receivedMime ?? '(missing)') + ' · detected ' + diagnostic.detectedFormat + ' · ' + (diagnostic.accepted ? 'validated' : 'rejected')}
+          </AppText>)}
+        </View>}
+      </View>;
   return <AppScreen>
     <Stack.Screen options={{ gestureEnabled: !busy }} />
     <FlatList data={rows} keyExtractor={(entry) => entry.id} contentContainerStyle={styles.content}
-      ListHeaderComponent={<View style={styles.section}>
-        <ScreenHeader title={story?.title ?? 'Story contents'} back={<Button label="Return to Library" text="‹ Library" variant="tertiary" disabled={busy}
+      ListHeaderComponent={<View style={[styles.section, { marginBottom: 0, gap: 8 }]}>
+        <ScreenHeader display action={story && <Button label={showActions ? 'Hide story actions' : 'Show story actions'} text="…" variant="tertiary" quiet icon expanded={showActions} onPress={() => setShowActions(!showActions)} />} title={story?.title ?? 'Story contents'} back={<Button label="Return to Library" text="‹ Library" variant="tertiary" disabled={busy}
           onPress={() => { if (canAct()) router.replace('/'); }} />} />
         {story && <>
           {story.author && <AppText tone="secondary">{story.author}</AppText>}
           <AppText tone="secondary">{storySummary(story)}</AppText>
-          <AppText tone="secondary">{story.downloaded === story.total ? 'Text downloaded for offline reading' : 'Missing text can be downloaded when you are online.'}</AppText>
           {readingTarget ? <View style={{ gap: 8 }}>
             <Button label={resume ? 'Continue Reading' : 'Start Reading'} text={resume ? 'Continue Reading' : 'Start Reading'} variant="primary" disabled={busy || refreshingFocus}
               onPress={() => openChapter(readingTarget)} />
@@ -271,15 +300,7 @@ function Contents({ id }: { id: string }) {
             {resume && !resume.currentlyListed && <AppText tone="caption">Saved chapter no longer listed</AppText>}
           </View> : story.source === 'spacebattles' && story.downloaded < story.total &&
             <Button label="Resume Download" text="Resume Download" variant="primary" disabled={busy} onPress={resumeDownload} />}
-          {story.source === 'spacebattles' && <>
-            <View style={styles.actions}>
-              <Button label="Check for Updates" text="Check for Updates" disabled={busy} onPress={() => { void runOperation(); }} />
-              {!!imageSummary && (imageSummary.unknown > 0 || imageSummary.pending > 0 || imageSummary.local > 0 || !!imageSummary.mimeRetryable) &&
-                <Button label={imageAction} text={imageAction} disabled={busy} onPress={() => { void runOperation(true); }} />}
-              {!!readingTarget && story.downloaded < story.total && <Button label="Resume Download" text="Resume Download" variant="tertiary" disabled={busy} onPress={resumeDownload} />}
-            </View>
-            {imageSummary && <AppText tone="caption">{describeImages(imageSummary)}</AppText>}
-          </>}
+
         </>}
         {savingRead && <LoadingState text="Saving Read/Unread state locally…" />}
         {(refreshingForeign || ownedElsewhere && !running && !savingRead && !managing) && <LoadingState text="Another operation for this story is finishing. Refreshing local contents…" />}
@@ -303,6 +324,7 @@ function Contents({ id }: { id: string }) {
         {cleanupWarning && <InlineBanner tone="warning" message={cleanupWarning}>
           <Button label="Retry local cleanup" text="Retry Cleanup" disabled={busy} onPress={() => { void retryCleanup(); }} />
         </InlineBanner>}
+        {showActions && maintenance}
         {!!entries.length && <SectionHeader>Chapters</SectionHeader>}
       </View>}
       renderItem={({ item }) => <View>
@@ -311,25 +333,6 @@ function Contents({ id }: { id: string }) {
         </View>}
         <ChapterRow entry={item} saved={item.saved} disabled={busy} readingDisabled={refreshingFocus} onOpen={() => openChapter(item.id)} onToggle={() => { void toggleRead(item); }} />
       </View>}
-      ListFooterComponent={story && <View style={{ marginTop: 32, gap: 24 }}>
-        {!!story.sourceUrl && <View style={{ gap: 8 }}>
-          <SectionHeader>Story Actions</SectionHeader>
-          <Button label="Open story source in browser" text="View Source" variant="tertiary" disabled={busy}
-            onPress={() => { if (canAct()) void Linking.openURL(story.sourceUrl).catch(() => { if (focused.current) setError('Could not open the source in your browser.'); }); }} />
-          {story.lastUpdateAttemptAt !== null && <AppText tone="caption">Last update attempt: {new Date(story.lastUpdateAttemptAt).toLocaleString()}</AppText>}
-          {story.lastUpdateSuccessAt !== null && <AppText tone="caption">Last complete check: {new Date(story.lastUpdateSuccessAt).toLocaleString()}</AppText>}
-          {story.source === 'spacebattles' && <><AppText tone="secondary">Free local storage while keeping this story, Read/Unread state, reading positions and update history.</AppText>
-            <Button label={'Remove downloads for ' + story.title} text="Remove Downloads" variant="destructive" disabled={busy} onPress={() => confirmManagement('downloads')} /></>}
-        </View>}
-        {story.source === 'spacebattles' && <View style={{ gap: 8 }}><SectionHeader>Danger Zone</SectionHeader>
-          <AppText tone="secondary">Remove this story and all of its Stowaway data from this device.</AppText>
-          <Button label={'Remove story ' + story.title + ' and all local state'} text="Remove Story" variant="destructive" disabled={busy} onPress={() => confirmManagement('story')} />
-        </View>}
-        {__DEV__ && !!imageOutcome?.mimeDiagnostics?.length && <View><SectionHeader>Development diagnostics</SectionHeader>
-          {imageOutcome.mimeDiagnostics.map((diagnostic) => <AppText tone="caption" key={diagnostic.chapterId + ':' + diagnostic.slot}>
-            {'Image MIME (dev): ' + diagnostic.chapterId + ' · slot ' + (diagnostic.slot + 1) + ' · received ' + (diagnostic.receivedMime ?? '(missing)') + ' · detected ' + diagnostic.detectedFormat + ' · ' + (diagnostic.accepted ? 'validated' : 'rejected')}
-          </AppText>)}
-        </View>}
-      </View>} />
+      ListFooterComponent={!showActions ? maintenance : null} />
   </AppScreen>;
 }

@@ -1,4 +1,6 @@
-import { useColorScheme } from 'react-native';
+import { createContext, useContext } from 'react';
+import { Platform, useColorScheme } from 'react-native';
+import type { AppStyle } from '../domain/types';
 
 export const palettes = {
   light: {
@@ -13,8 +15,22 @@ export const palettes = {
   },
 } as const;
 
+export const profiles = {
+  classic: palettes,
+  stowaway: {
+    light: { ...palettes.light, canvas: '#F5F0E6', surface: '#FCF8F0', surfaceSubtle: '#EBE3D4', textPrimary: '#26313A',
+      textSecondary: '#665E54', accent: '#795B2C', accentPressed: '#614721', accentSoft: '#E9DFC9', border: '#D8CEBC', onAccent: '#FCF8F0', warning: '#8B5110' },
+    dark: { ...palettes.dark, canvas: '#171D24', surface: '#202933', surfaceSubtle: '#29333D', textPrimary: '#F4EBDD',
+      textSecondary: '#BEB4A6', accent: '#D0AD72', accentPressed: '#E1C494', accentSoft: '#37352F', border: '#384048', onAccent: '#171D24' },
+  },
+};
+// Storage owns persistence; this context only distributes the selected visual profile.
+export const AppStyleContext = createContext<AppStyle>('stowaway');
 export function useTheme() {
   const dark = useColorScheme() === 'dark';
-  return { ...palettes[dark ? 'dark' : 'light'], dark };
+  const profile = useContext(AppStyleContext);
+  return { ...profiles[profile][dark ? 'dark' : 'light'], dark, profile,
+    displayFont: profile === 'stowaway' ? Platform.select({ ios: 'Georgia', default: 'serif' }) : undefined,
+    cardRadius: profile === 'stowaway' ? 18 : 16, sectionGap: profile === 'stowaway' ? 28 : 24 };
 }
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, inset: 20, section: 24, large: 32 };

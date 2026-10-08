@@ -1,6 +1,6 @@
 # UI/UX overhaul — iPhone review
 
-**Status: physical UI acceptance pending. Nothing below is marked passed.** Use `feat/ui-overhaul` with the existing Expo Go/Metro library. Record the tested commit, iPhone/iOS/Expo Go versions, system text size and any failures. Historical S0/S1/S2A/I0–I4 and pre-UI acceptance retain their original evidence boundaries. S2B remains deferred; already-running offline reading is not Metro-free cold-start proof.
+**Status: physical review has begun; UI acceptance remains pending. Nothing below is marked passed.** Use `feat/ui-overhaul` with the existing Expo Go/Metro library. Record the tested commit, iPhone/iOS/Expo Go versions, system text size and any failures. Historical S0/S1/S2A/I0–I4 and pre-UI acceptance retain their original evidence boundaries. S2B remains deferred; already-running offline reading is not Metro-free cold-start proof.
 
 Do not reset the library or damage files to manufacture a case. Mark unavailable natural cases **Not exercised**. Use only selected public stories and deliberate existing source actions.
 
@@ -36,3 +36,16 @@ Do not reset the library or damage files to manufacture a case. Mark unavailable
 - [ ] 30. After ordinary reading, answer: **Would you rather use this than SpaceBattles in Safari?** Note the most distracting or uncomfortable detail.
 
 Report each as Pass / Fail / Not exercised, with a brief description for failures. No special physical storage-failure experiment is required for the management wording fix. Native keyboard, safe areas, Dynamic Type, VoiceOver, WKWebView geometry and subjective reading comfort require this review; deterministic tests and web previews do not certify them. Physical review precedes PR creation.
+
+## Physical-feedback refinement checks
+
+Retest on the refinement commit; earlier subjective feedback is not a pass for these changes.
+
+- [ ] 31. Compare **Stowaway** and **Classic** from Library → App Style in both system appearances. Default is Stowaway; selection survives reopening. Judge warmth, contrast and scanning comfort.
+- [ ] 32. Try Georgia, Palatino, Serif and Sans offline. Selected state is clear and the choice persists. Named faces may fall back on the device.
+- [ ] 33. Select **Paper** and judge glare and ink/link contrast. Classic + Paper and Stowaway + Dark work independently.
+- [ ] 34. At a recognizable deep paragraph, switch fonts, then sizes. The passage stays nearby; navigation/reopening retain it without marking Read merely from reflow.
+- [ ] 35. Tap compact ✓/○ with normal use and VoiceOver. Its target is comfortable, changes only Read/Unread and never opens the chapter.
+- [ ] 36. `↓ Not downloaded` clearly means unavailable text, not deletion/error. Its row cannot open; manual Read correction works.
+- [ ] 37. Scan a naturally long story. Chapters dominate the initial viewport; header Story Actions reaches update/image/source/removal without scrolling the entire list. Check the separated Danger Zone and confirmation/cancellation.
+- [ ] 38. At a large accessibility text size, font/style/theme choices, long titles and Done remain reachable; quieter reader chrome stays easy to use.
