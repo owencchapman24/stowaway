@@ -12,6 +12,60 @@ const phase = (type: 'ready' | 'layout-start'): ReaderMessage => ({ ...identity,
 beforeEach(() => jest.useFakeTimers());
 afterEach(() => jest.useRealTimers());
 
+function gate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+
+test.each([false, true])('hardening: older failure never retries over queued newer sample (newer fails=%s)', async (newerFails) => {
+  const entered = gate(), finish = gate(); let saved = 0;
+  const save = jest.fn(async (value: Locator) => {
+    if (save.mock.calls.length === 1) { entered.release(); await finish.promise; throw new Error('A rollback'); }
+    if (newerFails && save.mock.calls.length === 2) throw new Error('B rollback');
+    saved = value.offset;
+  });
+  const session = new PositionSession(save, jest.fn()); session.receive(phase('ready'));
+  session.receive(position({ ...locator, offset: 10 })); const a = session.flush().catch(() => {}); await entered.promise;
+  session.receive(position({ ...locator, offset: 20 })); const b = session.flush().catch(() => {});
+  finish.release(); await Promise.all([a, b]); await session.flush();
+  expect(saved).toBe(20);
+  expect(save.mock.calls.map(([value]) => value.offset)).toEqual(newerFails ? [10, 20, 20] : [10, 20]);
+  session.dispose();
+});
+
+test('hardening: newer merely pending sample survives older failure', async () => {
+  const entered = gate(), finish = gate();
+  const save = jest.fn(async (_value: Locator) => {
+    if (save.mock.calls.length === 1) { entered.release(); await finish.promise; throw new Error('A rollback'); }
+  });
+  const session = new PositionSession(save, jest.fn()); session.receive(phase('ready'));
+  session.receive(position({ ...locator, offset: 10 })); const a = session.flush().catch(() => {}); await entered.promise;
+  session.receive(position({ ...locator, offset: 20 })); finish.release(); await a; await session.flush();
+  expect(save.mock.calls.map(([value]) => value.offset)).toEqual([10, 20]); session.dispose();
+});
+
+test.each([[true, false, false], [true, true, false], [true, false, true], [false, true, true]])(
+  'hardening: rapid samples and overlapping background/exit/dispose preserve latest (%s/%s/%s)', async (aFails, bFails, cFails) => {
+    const entered = gate(), finish = gate(); const failures = [aFails, bFails, cFails]; let saved = 0;
+    const save = jest.fn(async (value: Locator) => {
+      const call = save.mock.calls.length - 1;
+      if (call === 0) { entered.release(); await finish.promise; }
+      if (failures[call]) throw new Error('Synthetic rollback');
+      saved = value.offset;
+    });
+    const session = new PositionSession(save, jest.fn()); session.receive(phase('ready'));
+    const flushes: Promise<void>[] = [];
+    for (const offset of [10, 20, 30]) {
+      session.receive(position({ ...locator, offset })); flushes.push(session.flush().catch(() => {}));
+      if (offset === 10) await entered.promise;
+    }
+    const background = session.flush().catch(() => {}); session.dispose(); finish.release();
+    await Promise.all([...flushes, background]); await session.flush();
+    expect(saved).toBe(30);
+    expect(save.mock.calls.map(([value]) => value.offset)).toEqual(cFails ? [10, 20, 30, 30] : [10, 20, 30]);
+  });
+
 test('loading/restoration/typography cannot overwrite a saved passage with temporary top', async () => {
   let saved = locator;
   const save = jest.fn(async (value: Locator) => { saved = value; });

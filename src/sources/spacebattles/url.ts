@@ -44,6 +44,41 @@ export function documentUrl(value: string, threadId: string, base = ORIGIN): str
   return url.href;
 }
 
+/** Request safety permits redirects; manifest authority also requires continuation identity. */
+export function assertManifestContinuation(requested: string, returned: string, threadId: string,
+  kind: 'index' | 'range', categoryId?: string): void {
+  const fail = () => new S1Failure('incomplete', 'Source redirect changed or obscured the requested manifest continuation.');
+  function identity(value: string) {
+    let url: URL;
+    try { url = new URL(documentUrl(value, threadId)); } catch { throw fail(); }
+    const endpoint = kind === 'index' ? 'threadmarks' : 'threadmarks-load-range';
+    if (!url.pathname.endsWith(`/${endpoint}`) && !url.pathname.endsWith(`/${endpoint}/`)) throw fail();
+    const query = new Map<string, string>();
+    for (const [key, raw] of url.searchParams) {
+      if (query.has(key)) throw fail(); // Never guess which duplicate the server used.
+      query.set(key, raw.replace(/^0+(?=\d)/, ''));
+    }
+    const scope = query.get('threadmark_category') ?? query.get('threadmark_category_id');
+    if (kind === 'range' && !query.has('threadmark_category_id')) throw fail();
+    if (query.has('threadmark_category') && query.has('threadmark_category_id') &&
+        query.get('threadmark_category') !== query.get('threadmark_category_id')) throw fail();
+    if (scope !== undefined && categoryId !== undefined && scope !== categoryId) throw fail();
+    query.delete('threadmark_category'); query.delete('threadmark_category_id');
+    if (kind === 'index') {
+      const page = query.get('page') ?? '1';
+      if (page === '0' || !Number.isSafeInteger(Number(page))) throw fail();
+      query.set('page', page);
+    } else if (!scope || !query.has('min') || !query.has('max')) throw fail();
+    // Other allowed parameters (notably per_page/threadmark_id) cannot change silently.
+    return { scope, query: JSON.stringify([...query].sort(([a], [b]) => a.localeCompare(b))) };
+  }
+  const before = identity(requested), after = identity(returned);
+  if (before.query !== after.query ||
+      (before.scope !== undefined && after.scope !== undefined && before.scope !== after.scope)) throw fail();
+  // An omitted index scope means primary. The caller verifies both URLs again
+  // with the parser's proven primary ID before accepting any rows.
+}
+
 export function postIdFromLink(value: string, base: string): string | null {
   let url: URL;
   try { url = new URL(value, base); } catch { return null; }

@@ -1,6 +1,6 @@
 import { parseIndex, parseRange, primaryIndex, samplePost, type Range } from './parse';
 import { RequestClient } from './request';
-import { documentUrl, threadFromUrl } from './url';
+import { assertManifestContinuation, documentUrl, threadFromUrl } from './url';
 import { S1Failure, type Category, type Diagnostic, type Document, type Entry, type Manifest, type RequestEvent, type Thread } from './types';
 
 const active = new WeakSet<RequestClient>();
@@ -13,6 +13,11 @@ export async function discoverManifest(thread: Thread, get: (url: string) => Pro
   const visited = new Set<string>();
   let category: Category | null = null;
   let pages = 0;
+  let incompleteContinuation = false;
+  function verifyContinuation(requested: string, returned: string, kind: 'index' | 'range', primary?: string) {
+    try { assertManifestContinuation(requested, returned, thread.threadId, kind, primary); }
+    catch (error) { incompleteContinuation = true; throw error; }
+  }
   async function expand(items: (Entry | Range)[], depth = 0): Promise<void> {
     if (depth > 20) throw new S1Failure('incomplete', 'Range nesting exceeds the spike budget.');
     for (const item of items) {
@@ -21,6 +26,7 @@ export async function discoverManifest(thread: Thread, get: (url: string) => Pro
         visited.add(item.url);
         const response = await get(item.url);
         pages++;
+        verifyContinuation(item.url, response.url, 'range', category!.id);
         await expand(parseRange(response, thread, category!.id), depth + 1);
       } else if (ids.has(item.postId)) duplicates.push(item.postId);
       else {
@@ -39,9 +45,11 @@ export async function discoverManifest(thread: Thread, get: (url: string) => Pro
       visited.add(url);
       const page = await get(url);
       pages++;
+      verifyContinuation(url, page.url, 'index', category?.id);
       if (visited.has(page.url) && page.url !== url) throw new S1Failure('incomplete', 'Source redirects to an already traversed page.');
       visited.add(page.url);
       const parsed = parseIndex(page, thread, category ?? undefined);
+      verifyContinuation(url, page.url, 'index', parsed.category.id);
       category = parsed.category;
       pageNumber = Number(new URL(page.url).searchParams.get('page') ?? 1);
       advertisedLast = Math.max(advertisedLast, parsed.lastPage);
@@ -55,7 +63,7 @@ export async function discoverManifest(thread: Thread, get: (url: string) => Pro
     return { state: 'COMPLETE', category, entries, duplicates, pages };
   } catch (error) {
     const failure = error instanceof S1Failure ? error : new S1Failure('parser', 'Source parsing failed.');
-    return { state: entries.length || category ? 'INCOMPLETE' : 'FAILED', category, entries, duplicates, pages, failure };
+    return { state: entries.length || category || incompleteContinuation ? 'INCOMPLETE' : 'FAILED', category, entries, duplicates, pages, failure };
   }
 }
 

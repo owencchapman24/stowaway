@@ -11,6 +11,24 @@ export const POSITION_BRIDGE = String.raw`
   let readEndSent = false;
   let readingGesture = null;
   const root = document.getElementById('chapter');
+  // Index static content once. Text/inline media belong to their nearest block;
+  // broad wrappers containing only other blocks have no reading content of their own.
+  const readingBlocks = [];
+  function collectReadingBlocks(node, owner) {
+    if (node.nodeType === 3) {
+      if (owner && node.textContent.trim()) owner.content.push(node);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    if (node.hasAttribute('data-block')) {
+      if (owner) owner.nested = true;
+      owner = { element: node, content: [], nested: false };
+      readingBlocks.push(owner);
+    }
+    if (owner && (node.tagName === 'IMG' || node.tagName === 'HR')) owner.content.push(node);
+    Array.from(node.childNodes).forEach(function (child) { collectReadingBlocks(child, owner); });
+  }
+  collectReadingBlocks(root, null);
   function send(message) {
     window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({
       session: CONFIG.session, chapterId: CONFIG.chapterId, contentHash: CONFIG.contentHash
@@ -46,23 +64,35 @@ export const POSITION_BRIDGE = String.raw`
     readEnd();
   }
   function snapshot() {
-    const visible = Array.from(root.querySelectorAll('[data-block]')).filter(function (element) {
-      return element.getClientRects().length && element.getBoundingClientRect().height > 0;
-    });
     const y = window.scrollY;
-    let candidate = visible[0];
-    // Prefer the deepest block intersecting the top reading line, then the next visible block.
-    visible.forEach(function (element) {
-      const rect = element.getBoundingClientRect();
-      if (rect.top <= 2 && rect.bottom > 2) candidate = element;
+    let intersecting = null, next = null, previous = null;
+    readingBlocks.forEach(function (block) {
+      const element = block.element;
+      if (!block.content.length || !element.getClientRects().length) return;
+      const bounds = element.getBoundingClientRect();
+      if (bounds.height <= 0) return;
+      // A mixed container remains eligible at its OWN text, not at a gap inside
+      // its child blocks. Leaf prose/images need only one bounding-box read.
+      const rects = block.nested ? block.content.flatMap(function (node) {
+        if (node.nodeType === 1) return Array.from(node.getClientRects());
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return Array.from(range.getClientRects());
+      }) : [bounds];
+      rects.forEach(function (rect) {
+        if (rect.height <= 0) return;
+        const sample = { element: element, rect: rect };
+        if (rect.top <= 2 && rect.bottom > 2) intersecting = sample;
+        else if (rect.top > 2 && (!next || rect.top < next.rect.top)) next = sample;
+        else if (rect.bottom <= 2 && (!previous || rect.bottom >= previous.rect.bottom)) previous = sample;
+      });
     });
-    if (!candidate || candidate.getBoundingClientRect().bottom <= 2) {
-      candidate = visible.find(function (element) { return element.getBoundingClientRect().top >= 0; }) || visible[visible.length - 1];
-    }
-    if (!candidate) return null;
+    const selected = intersecting || next || previous;
+    if (!selected) return null;
+    const candidate = selected.element;
     return {
       chapterId: CONFIG.chapterId, contentHash: CONFIG.contentHash, blockId: candidate.id,
-      offset: Math.max(0, -candidate.getBoundingClientRect().top),
+      offset: Math.max(0, (selected === next ? selected.rect.top : 0) - candidate.getBoundingClientRect().top),
       progression: maxScroll() ? Math.min(1, Math.max(0, y / maxScroll())) : 0,
       expandedSpoilers: Array.from(root.querySelectorAll('details[open]')).map(function (element) { return element.id; })
     };

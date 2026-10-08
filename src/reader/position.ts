@@ -40,7 +40,8 @@ export function parseMessage(raw: string, chapter: Chapter, session: string): Re
 /** Only post-restoration reading samples become candidates for persistence. */
 export class PositionSession {
   private ready = false;
-  private pending: Locator | null = null;
+  private pending: { locator: Locator; revision: number } | null = null;
+  private newestRevision = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private writes: Promise<void> = Promise.resolve();
 
@@ -56,7 +57,7 @@ export class PositionSession {
       return;
     }
     if (message.type !== 'position' || !this.ready) return;
-    this.pending = message.locator;
+    this.pending = { locator: message.locator, revision: ++this.newestRevision };
     if (this.timer) clearTimeout(this.timer);
     if (message.reason === 'flush') void this.flush().catch(this.onError);
     else this.timer = setTimeout(() => { void this.flush().catch(this.onError); }, 300);
@@ -65,12 +66,16 @@ export class PositionSession {
   async flush(): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    const locator = this.pending;
+    const sample = this.pending;
     this.pending = null;
-    if (locator) {
-      this.writes = this.writes.catch(() => undefined).then(() => this.save(locator));
+    if (sample) {
+      this.writes = this.writes.catch(() => undefined).then(() => this.save(sample.locator));
       try { await this.writes; }
-      catch (error) { this.pending ??= locator; throw error; }
+      catch (error) {
+        // A newer sample may already have left pending for the serialized queue.
+        if (sample.revision === this.newestRevision) this.pending ??= sample;
+        throw error;
+      }
     } else await this.writes;
   }
 

@@ -105,6 +105,8 @@ function acknowledge(script: string) {
   else if (script.includes('.flush()')) send('flushed');
 }
 
+// Each case combines a 700 ms handoff timeout, real SQLite rollback/recovery
+// and a cold UI render, so allow bounded CI wall time for this family only.
 test.each(['Return to story contents', 'Next chapter', 'Previous chapter'])('unacknowledged %s retains the owner through real Read rollback and retries without another completion', async (label) => {
   await repo.commitDownloadedChapter(id, '103', await prepareContent('<p>Synthetic next.</p>', digest));
   const locator = savedPassage(); await repo.saveLocator(locator);
@@ -146,7 +148,7 @@ test.each(['Return to story contents', 'Next chapter', 'Previous chapter'])('una
   expect(await repo.listContents(id)).toMatchObject([{ isRead: false }, { isRead: true }, { isRead: false }]);
   view.unmount(); jest.mocked(useLocalSearchParams).mockReturnValue({ story: id }); render(<StoryContents />);
   await waitFor(() => expect(screen.getByLabelText('Mark Generated 102 as unread')).toBeEnabled());
-});
+}, 15_000);
 
 test.each(['Return to story contents', 'Next chapter', 'Previous chapter'])('queued completion before matching acknowledgement persists before %s', async (label) => {
   await repo.commitDownloadedChapter(id, '103', await prepareContent('<p>Synthetic next.</p>', digest));

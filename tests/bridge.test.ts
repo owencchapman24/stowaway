@@ -1,6 +1,12 @@
 /** @jest-environment jsdom */
 import { POSITION_BRIDGE } from '../src/reader/bridge';
+import { URL as HostURL } from 'node:url';
 import type { Locator } from '../src/domain/types';
+import { sanitize } from '../src/content/sanitize';
+import { extractPostBody } from '../src/sources/spacebattles/parse';
+import { threadFromUrl } from '../src/sources/spacebattles/url';
+import { bodyArticle } from './fixtures/import';
+import { page, threadUrl } from './fixtures/spacebattles';
 
 type BridgeWindow = Window & typeof globalThis & {
   ReactNativeWebView: { postMessage: (raw: string) => void };
@@ -8,6 +14,10 @@ type BridgeWindow = Window & typeof globalThis & {
     prepareForExit: (handoffId: string) => void };
 };
 const bridgeWindow = window as BridgeWindow;
+// jest-expo installs a lazy native URL; extraction here runs in host JSDOM.
+const presetURL = Object.getOwnPropertyDescriptor(globalThis, 'URL')!;
+beforeAll(() => { Object.defineProperty(globalThis, 'URL', { configurable: true, value: HostURL }); });
+afterAll(() => { Object.defineProperty(globalThis, 'URL', presetURL); });
 let messages: { type: string; locator?: Locator; linkId?: string; handoffId?: string }[];
 let y: number;
 let documentListeners: Map<string, EventListenerOrEventListenerObject[]>;
@@ -47,6 +57,15 @@ beforeEach(() => {
     element.getBoundingClientRect = () => ({ top: top * scale() - y, bottom: (top + height) * scale() - y,
       height: height * scale() }) as DOMRect;
   }
+  const inlineSummary = document.querySelector('summary:not([data-block])')!;
+  inlineSummary.getBoundingClientRect = () => ({ top: 240 * scale() - y, bottom: 280 * scale() - y, height: 40 * scale() }) as DOMRect;
+  const createRange = document.createRange.bind(document);
+  jest.spyOn(document, 'createRange').mockImplementation(() => {
+    const range = createRange();
+    // JSDOM has no layout for Range; use the explicitly emulated inline box.
+    range.getClientRects = () => [range.startContainer.parentElement!.getBoundingClientRect()] as unknown as DOMRectList;
+    return range;
+  });
   const documentAdd = document.addEventListener.bind(document);
   jest.spyOn(document, 'addEventListener').mockImplementation((type, listener, options) => {
     documentListeners.set(type, [...documentListeners.get(type) ?? [], listener]);
@@ -75,6 +94,104 @@ function readingGesture(type = 'touchmove', trusted = true, target: EventTarget 
   gesture(type, { isTrusted: trusted, target, preventDefault: jest.fn() });
 }
 const completions = () => messages.filter((message) => message.type === 'read-end');
+
+// Real imported/sanitized topology; only layout and native input are emulated.
+function importedLayout(html: string, geometry: (element: Element, index: number) => [number, number]) {
+  const thread = threadFromUrl(threadUrl);
+  const source = extractPostBody({ url: threadUrl, status: 200, html: page(bodyArticle('91', html)) }, thread,
+    { postId: '91', chapterId: `${thread.storyId}:post:91`, title: 'Generated', url: threadUrl, threadmarkId: null }, '9');
+  const canonical = sanitize(source);
+  document.body.innerHTML = `<main id="chapter">${canonical.html}</main>`;
+  Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, get: () => 12000 * scale() });
+  jest.mocked(window.scrollTo).mockImplementation(((_x: number, next: number) => {
+    y = Math.max(0, Math.min(next, 12000 * scale() - 200)); window.dispatchEvent(new Event('scroll'));
+  }) as typeof window.scrollTo);
+  Array.from(document.querySelectorAll('[data-block]')).forEach((element, index) => {
+    const [top, height] = geometry(element, index);
+    const visible = () => {
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        if (parent.tagName === 'DETAILS' && !(parent as HTMLDetailsElement).open &&
+          !parent.querySelector('summary')?.contains(element)) return false;
+      }
+      return true;
+    };
+    element.getClientRects = () => ({ length: visible() ? 1 : 0 }) as DOMRectList;
+    element.getBoundingClientRect = () => ({ top: 24 + top * scale() - y, bottom: 24 + (top + height) * scale() - y,
+      height: visible() ? height * scale() : 0 }) as DOMRect;
+  });
+  return canonical;
+}
+function sampleAt(top: number) {
+  gesture('touchstart', { isTrusted: true }); window.scrollTo(0, top); bridgeWindow.StowawayReader.flush();
+  return messages.filter((message) => message.type === 'position').at(-1)!.locator!;
+}
+
+test.each([14, 32])('hardening: imported paragraph gap anchors locally through font size %s', (size) => {
+  const canonical = importedLayout(Array.from({ length: 100 }, (_, i) => `<p>Generated line ${i}.</p>`).join(''),
+    (_element, index) => index === 0 ? [0, 5300] : [(index - 1) * 53, 33]);
+  const before = document.getElementById('chapter')!.innerHTML;
+  run(null); expect(messages.map((message) => message.type)).toEqual(['ready']);
+  const sampled = sampleAt(2664);
+  expect(sampled).toMatchObject({ blockId: canonical.blockIds[51], offset: 0 });
+  bridgeWindow.StowawayReader.restyle(size, 'light'); jest.runAllTimers();
+  expect(y).toBeCloseTo(24 + 2650 * size / 20);
+  expect(messages.filter((message) => message.type === 'position')).toHaveLength(1);
+  expect(completions()).toEqual([]); expect(document.getElementById('chapter')!.innerHTML).toBe(before);
+});
+
+test('hardening: reading within imported paragraph still uses its local offset', () => {
+  importedLayout('<p>First.</p><p>Second.</p>', (_element, index) => index === 0 ? [0, 10000] : [index * 100, 40]);
+  run(null); expect(sampleAt(234)).toMatchObject({ blockId: 'block-0003', offset: 10 });
+});
+
+test.each([
+  ['nested wrappers', '<div><div><p>First.</p><p>Second.</p></div></div>', 'p:last-child'],
+  ['heading', '<h2>Heading</h2><p>Text.</p>', 'h2'],
+  ['list', '<ul><li>First.</li><li>Second.</li></ul>', 'li:last-child'],
+  ['quote', '<blockquote><p>Quoted text.</p></blockquote>', 'p'],
+  ['table', '<table><tbody><tr><td>Cell.</td></tr></tbody></table>', 'td'],
+  ['pre', '<pre>Generated preformatted text.</pre>', 'pre'],
+  ['direct inline text', '<div><span>Direct <strong>readable</strong> text.</span></div>', 'div div'],
+])('hardening: meaningful %s wins over giant structural ancestors', (_name, html, selector) => {
+  importedLayout(html, (element) => element.matches(selector) ? [500, 40]
+    : /^(P|LI|SUMMARY|H2|TD|PRE|IMG)$/.test(element.tagName) ? [100, 40] : [0, 10000]);
+  const target = document.querySelector(`#chapter ${selector}`)!;
+  run(null); expect(sampleAt(514)).toMatchObject({ blockId: target.id, offset: 0 });
+});
+
+test.each([false, true])('hardening: spoiler summary/descendant visibility (open=%s)', (open) => {
+  importedLayout('<details><summary>Disclosure</summary><div><p>Hidden paragraph.</p></div></details><p>Following.</p>',
+    (element) => element.tagName === 'SUMMARY' ? [300, 40] : element.tagName === 'P'
+      ? [element.closest('details') ? 500 : 1000, 40] : [0, 10000]);
+  document.querySelector('details')!.open = open; run(null);
+  const target = document.querySelector(open ? 'details p' : 'summary')!;
+  expect(sampleAt(open ? 514 : 314)).toMatchObject({ blockId: target.id, offset: 0 });
+});
+
+test.each([false, true])('hardening: image or placeholder anchors its canonical block (local=%s)', (local) => {
+  const canonical = importedLayout('<p>Before.</p><img src="https://example.com/generated.png"><p>After.</p>',
+    (element, index) => index === 2 ? [500, 200] : element.tagName === 'P' ? [100, 40] : [0, 10000]);
+  const imageBlock = document.getElementById(canonical.blockIds[2]!)!;
+  if (local) imageBlock.innerHTML = '<img src="source-image-0.png" alt="Generated">';
+  run(null); expect(sampleAt(514)).toMatchObject({ blockId: imageBlock.id, offset: 0 });
+  expect(canonical.blockIds[2]).toBe(imageBlock.id);
+});
+
+test.each([false, true])('hardening: mixed direct text remains local without claiming child whitespace (at text=%s)', (atText) => {
+  importedLayout('<div><span>Direct container text.</span><p>First child.</p><p>Second child.</p></div>',
+    (element) => element.tagName === 'P' ? [element.matches('p:last-child') ? 500 : 200, 40] : [0, 10000]);
+  const inline = document.querySelector('span')!;
+  inline.getBoundingClientRect = () => ({ top: 124 * scale() - y, bottom: 164 * scale() - y, height: 40 * scale() }) as DOMRect;
+  const target = document.querySelector(atText ? '#chapter > div > div' : 'p:last-child')!;
+  run(null);
+  expect(sampleAt(atText ? 134 : 514)).toMatchObject({ blockId: target.id, offset: atText ? 110 : 0 });
+});
+
+test('hardening: final gap falls back to nearby previous prose rather than a wrapper', () => {
+  importedLayout('<div><p>Last paragraph.</p></div>', (element) => element.tagName === 'P' ? [500, 40] : [0, 10000]);
+  const target = document.querySelector('p')!; run(null);
+  expect(sampleAt(574)).toMatchObject({ blockId: target.id, offset: 50 });
+});
 
 test('prepareForExit flushes the dirty locator before matching quiescence and freezes fresh trusted input until recovery', () => {
   run(null); gesture('touchstart', { isTrusted: true }); readingGesture(); window.scrollTo(0, 300);
