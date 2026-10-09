@@ -1,8 +1,12 @@
 # UI/UX overhaul — iPhone review
 
-**Status: physical review has begun; UI acceptance remains pending. Nothing below is marked passed.** Use `feat/ui-overhaul` with the existing Expo Go/Metro library. Record the tested commit, iPhone/iOS/Expo Go versions, system text size and any failures. Historical S0/S1/S2A/I0–I4 and pre-UI acceptance retain their original evidence boundaries. S2B remains deferred; already-running offline reading is not Metro-free cold-start proof.
+**Current status: UI/UX is merged in main `76021496aedb506bd7213daf2d014dd7e9fb0a9d`; the v0 visual direction is frozen.** Owen reports preferring Stowaway to SpaceBattles in Safari and that partial-sheet phone sanity on `69c5f5a51cefbcc1e34060b803c0860643c0b01f` passed to his satisfaction, with real reader prose exposed during font comparison. This is aggregate user-reported evidence, not a per-item or exhaustive VoiceOver/Dynamic Type/native-event pass. Individual boxes below remain unchecked where no individual result was supplied. Historical S0/S1/S2A/I0–I4 and pre-UI acceptance retain their original boundaries. S2B standalone acceptance remains unperformed; already-running offline reading is not Metro-free cold-start proof.
 
 Do not reset the library or damage files to manufacture a case. Mark unavailable natural cases **Not exercised**. Use only selected public stories and deliberate existing source actions.
+
+## Historical initial UI checklist
+
+Retained review protocol from `feat/ui-overhaul`: record the tested commit, iPhone/iOS/Expo Go versions, system text size and failures. Later catalog and partial-sheet checks supersede the older presentation-specific instructions.
 
 - [ ] 1. Open with the existing library: stories, counts, Read flags, passages, images and settings survive without reset.
 - [ ] 2. Library is easy to scan; titles, authors and partial/all-read summaries are clear.
@@ -35,7 +39,7 @@ Do not reset the library or damage files to manufacture a case. Mark unavailable
 - [ ] 29. If reasonably reproducible, leave Resume while its last save finishes and return to Contents. Counts/rows refresh before controls recover. Do not manufacture storage failures.
 - [ ] 30. After ordinary reading, answer: **Would you rather use this than SpaceBattles in Safari?** Note the most distracting or uncomfortable detail.
 
-Report each as Pass / Fail / Not exercised, with a brief description for failures. No special physical storage-failure experiment is required for the management wording fix. Native keyboard, safe areas, Dynamic Type, VoiceOver, WKWebView geometry and subjective reading comfort require this review; deterministic tests and web previews do not certify them. Physical review precedes PR creation.
+Report individual checks as Pass / Fail / Not exercised, with a brief description for failures. No special physical storage-failure experiment is required for the management wording fix. Native keyboard, safe areas, Dynamic Type, VoiceOver, WKWebView geometry and subjective reading comfort need device evidence; deterministic tests and web previews do not certify them. The original pre-PR physical-review gate is historical; the UI milestone is now merged.
 
 ## Physical-feedback refinement checks
 
@@ -50,9 +54,9 @@ Retest on the refinement commit; earlier subjective feedback is not a pass for t
 - [ ] 37. Scan a naturally long story. Chapters dominate the initial viewport; header Story Actions reaches update/image/source/removal without scrolling the entire list. Check the separated Danger Zone and confirmation/cancellation.
 - [ ] 38. At a large accessibility text size, font/style/theme choices, long titles and Done remain reachable; quieter reader chrome stays easy to use.
 
-## Final focused font-picker checks
+## Historical nine-font / two-group checks — superseded
 
-Owen's latest feedback freezes the accepted visual direction outside font selection. These checks remain pending on the new font-refinement commit; no new device pass is inferred from that feedback.
+Checks 39–45 describe the earlier nine-font/two-group candidate and are retained for history. For the current 26-font/five-group catalog, use checks 46–56. The earlier feedback froze the surrounding visual direction; it did not individually certify these checks. No historical unchecked item is converted to Passed.
 
 - [ ] 39. Reading Appearance shows one current-font row. Open Reading Font, compare the two groups, select repeatedly, return with Done, and reopen. Check VoiceOver focus/selection and back/escape behavior.
 - [ ] 40. Try all nine choices: Baskerville, Georgia, Palatino, Charter, Times New Roman, System Serif, System Sans, Avenir Next and Helvetica Neue. Confirm distinctness where expected and note any fallback or indistinguishable pair.
@@ -64,7 +68,7 @@ Owen's latest feedback freezes the accepted visual direction outside font select
 
 ## Expanded catalog and backdrop checks
 
-Owen reports preferring Stowaway to SpaceBattles in Safari. This records that feedback only; the following new checks remain unperformed/pending on the catalog/dismissal commit.
+At the catalog/dismissal commit, Owen reported preferring Stowaway to SpaceBattles in Safari; individual results for these checks were not supplied. The later aggregate phone sanity report is recorded above without inferring exhaustive coverage.
 
 - [ ] 46. Scan all 26 choices across Bookish Serif, Sans Serif, Typewriter & Mono, Handwritten and Character & Decorative. Verify each visibly renders or falls back honestly; note any absent/indistinguishable family. Native labels should match reader character where supported; System Serif is previewed in the reader.
 - [ ] 47. Compare representative traditional, sans, typewriter/mono and playful choices. Selected marks follow changes, the picker stays open, and rapid taps during restyle do not overwrite a later settled preference.
@@ -76,7 +80,7 @@ Owen reports preferring Stowaway to SpaceBattles in Safari. This records that fe
 
 ## Partial reading-sheet checks
 
-Owen reports that the previous font picker covered essentially the whole iPhone screen. These checks apply to the partial-sheet follow-up; no new physical pass is inferred. The current font catalog remains 26 choices in five groups.
+The previous font picker covered essentially the whole iPhone screen. Owen subsequently reported satisfactory partial-sheet phone sanity, including exposed real prose, on `69c5f5a51cefbcc1e34060b803c0860643c0b01f`. These detailed checks remain an unfilled per-item record; the aggregate report does not establish every conditional case. The current catalog is 26 choices in five groups.
 
 - [ ] 53. Open Appearance, then Font. At ordinary text size each panel uses roughly the lower half of usable screen height, leaving real chapter prose visible. Compare several different fonts without closing the picker; after each restyle settles, the exposed passage visibly uses the selected font.
 - [ ] 54. Scroll to the final font and scroll the parent controls on a small viewport. Done stays pinned and reachable. Scrolls/taps inside do not dismiss or interact with the reader; outside Font returns to Appearance and outside Appearance closes it. Applied choices survive dismissal/reopening.

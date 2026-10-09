@@ -1,9 +1,9 @@
 # Stowaway v0 UI/UX Specification
 
-**Status:** Implementation-ready design specification  
-**Scope:** UI/UX polish of the existing functional v0; no new source, sync, search, annotation, pagination, or background-work features  
-**Primary device:** iPhone  
-**Stack constraints:** React Native + Expo Router shell; controlled local WebView reader; local SQLite/files; existing operation ownership, locators, Read state, and quiescence protocol remain authoritative  
+**Status:** Implementation-ready design specification\
+**Scope:** UI/UX polish of the existing functional v0; no new source, sync, search, annotation, pagination, or background-work features\
+**Primary device:** iPhone\
+**Stack constraints:** React Native + Expo Router shell; controlled local WebView reader; local SQLite/files; existing operation ownership, locators, Read state, and quiescence protocol remain authoritative\
 **Design intent:** Make Stowaway feel like a focused native reading app rather than an engineering diagnostic interface.
 
 ---
@@ -772,7 +772,7 @@ Use typed banners with concise context and a clear next action. Preserve the exi
 
 Screen action copy:
 
-**Remove Downloads**  
+**Remove Downloads**\
 “Free local storage while keeping this story, Read/Unread state, reading positions, and update history.”
 
 Confirmation title:
@@ -787,7 +787,7 @@ Confirmation body:
 
 Screen action copy:
 
-**Remove Story**  
+**Remove Story**\
 “Remove this story and all of its Stowaway data from this device.”
 
 Retain the current two-confirmation flow.
