@@ -5,15 +5,9 @@ import { fixtureStory } from '../src/fixtures/story';
 import { READER_FONT_STACKS } from '../src/reader/appearance';
 import type { Preferences, ReaderFont } from '../src/domain/types';
 import { READER_FONTS } from '../src/domain/preferences';
+import { expectedReadingFonts } from './fixtures/reader-fonts';
 
-const expectedStacks: Record<ReaderFont, string> = {
-  georgia: 'Georgia, "Times New Roman", serif', baskerville: 'Baskerville, Georgia, serif',
-  palatino: 'Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif', charter: 'Charter, Georgia, serif',
-  times: '"Times New Roman", Times, serif', serif: 'ui-serif, "Times New Roman", serif',
-  sans: '-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
-  'avenir-next': '"Avenir Next", -apple-system, "Helvetica Neue", Arial, sans-serif',
-  'helvetica-neue': '"Helvetica Neue", Helvetica, Arial, sans-serif',
-};
+const expectedStacks = Object.fromEntries(expectedReadingFonts.map(({ key, stack }) => [key, stack])) as Record<ReaderFont, string>;
 test.each(Object.keys(expectedStacks) as ReaderFont[])('reader %s font is selected only from local app-owned CSS', (font) => {
   const content = sanitize('<p>Original synthetic paragraph.</p>');
   const html = readerDocument({ ...content, id: 'one', storyId: 'story', title: 'Generated', position: 0, contentHash: 'hash' },

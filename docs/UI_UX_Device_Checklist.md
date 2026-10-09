@@ -61,3 +61,15 @@ Owen's latest feedback freezes the accepted visual direction outside font select
 - [ ] 43. At a recognizable deep paragraph or gap, switch between a serif and Avenir Next/Helvetica Neue, then return. Verify passage preservation, navigation/reopening and no Read completion from reflow.
 - [ ] 44. At maximum comfortable accessibility text size, scroll the full font list and reach Done. Check wrapped multiword labels, checkmarks and 44pt target comfort.
 - [ ] 45. With the app already running and networking disabled, try every font and reopen local chapters. Note any missing/fallback font. This does not establish the deferred S2B Metro-free cold start.
+
+## Expanded catalog and backdrop checks
+
+Owen reports preferring Stowaway to SpaceBattles in Safari. This records that feedback only; the following new checks remain unperformed/pending on the catalog/dismissal commit.
+
+- [ ] 46. Scan all 26 choices across Bookish Serif, Sans Serif, Typewriter & Mono, Handwritten and Character & Decorative. Verify each visibly renders or falls back honestly; note any absent/indistinguishable family. Native labels should match reader character where supported; System Serif is previewed in the reader.
+- [ ] 47. Compare representative traditional, sans, typewriter/mono and playful choices. Selected marks follow changes, the picker stays open, and rapid taps during restyle do not overwrite a later settled preference.
+- [ ] 48. Change font, then dismiss via backdrop and reopen/relaunch. The applied font, size and theme persist independently of App Style.
+- [ ] 49. At a recognizable deep paragraph/gap, compare Georgia → Avenir Next, Georgia → Menlo/American Typewriter and Georgia → Marker Felt/Noteworthy. Verify the same passage through return, navigation and reopening, with no Read completion merely from reflow. Do not repeat exhaustive locator checks for every font.
+- [ ] 50. With the app already running offline, try the full catalog and reopen local chapters. Note any missing face/fallback; this is not S2B Metro-free cold-start evidence.
+- [ ] 51. Tap the dimmed area outside Appearance: it closes. Outside Font: it returns to Appearance; another outside tap closes. Done/back/escape still work. Tap controls, labels and blank panel space and scroll inside: no accidental dismissal or preference reversal.
+- [ ] 52. At large Dynamic Type and with VoiceOver, reach every group, the bottom font and Done. Check preview readability, wrapped labels, selected-state announcements, modal focus and outside-tap comfort.

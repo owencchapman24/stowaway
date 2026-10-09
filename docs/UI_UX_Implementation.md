@@ -5,6 +5,78 @@
 S0, S1 and S2A are accepted; I0–I4 are merged/accepted. The whole-repository Astra audit is complete. Pre-UI hardening is merged in PR #9 and passed Owen's focused phone retest, within [its recorded limits](Pre_UI_Hardening.md). S2B remains deferred; full v0 remains incomplete. No PR creation or merge belongs to this pass.
 
 
+
+## Final catalog and backdrop polish — 8 October 2026
+
+Focused follow-up on `299529b55b5fd77892e2ef118a4cf756fded8c61`, on `feat/ui-overhaul`. Owen reports strongly positive physical feedback and explicitly prefers Stowaway to SpaceBattles in Safari. This is user-reported feedback, not an agent phone run or blanket acceptance of the new changes. The visual design remains frozen outside the expanded font picker and reader-appearance backdrop dismissal.
+
+**Verified catalog: 26 choices, 24 named iOS system families plus the two existing system generics.** Before adding names, the current [Apple system-font catalog](https://developer.apple.com/fonts/system-fonts/) was inspected, including raw HTML **system font iOS** versus downloadable/document-support markers. The [Apple font-family table](https://developer.apple.com/documentation/applenews/applying-apple-news-format-fonts) corroborates family spellings; [Apple's typography session](https://developer.apple.com/videos/play/wwdc2020/10175/) separately demonstrates Charter-Roman. These are published availability/naming facts, not proof of the exact face selected on Owen's device. System families retain [WebKit's ui-serif support](https://webkit.org/blog/10247/new-webkit-features-in-safari-13-1/) and [system-sans guidance](https://webkit.org/blog/3709/using-the-system-font-in-web-content/).
+
+| Category | Choice / stored key | Exact static CSS stack | Availability basis |
+| --- | --- | --- | --- |
+| Bookish Serif | Baskerville (`baskerville`) | `Baskerville, Georgia, serif` | Apple iOS system: Baskerville |
+| Bookish Serif | Charter (`charter`) | `Charter, Georgia, serif` | Apple iOS system: Charter Roman |
+| Bookish Serif | Cochin (`cochin`) | `Cochin, Georgia, serif` | Apple iOS system: Cochin |
+| Bookish Serif | Didot (`didot`) | `Didot, Georgia, serif` | Apple iOS system: Didot |
+| Bookish Serif | Georgia (`georgia`) | `Georgia, "Times New Roman", serif` | Apple iOS system: Georgia |
+| Bookish Serif | Hoefler Text (`hoefler-text`) | `"Hoefler Text", Georgia, serif` | Apple iOS system: Hoefler Text |
+| Bookish Serif | Palatino (`palatino`) | `Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif` | Apple iOS system: Palatino |
+| Bookish Serif | Times New Roman (`times`) | `"Times New Roman", Times, serif` | Apple iOS system: Times New Roman |
+| Bookish Serif | System Serif (`serif`) | `ui-serif, "Times New Roman", serif` | WebKit `ui-serif` |
+| Sans Serif | Avenir (`avenir`) | `Avenir, -apple-system, sans-serif` | Apple iOS system: Avenir Roman |
+| Sans Serif | Avenir Next (`avenir-next`) | `"Avenir Next", -apple-system, "Helvetica Neue", Arial, sans-serif` | Apple iOS system: Avenir Next Regular |
+| Sans Serif | Futura (`futura`) | `Futura, -apple-system, sans-serif` | Apple iOS system: Futura Medium |
+| Sans Serif | Gill Sans (`gill-sans`) | `"Gill Sans", -apple-system, sans-serif` | Apple iOS system: Gill Sans |
+| Sans Serif | Helvetica Neue (`helvetica-neue`) | `"Helvetica Neue", Helvetica, Arial, sans-serif` | Apple iOS system: Helvetica Neue |
+| Sans Serif | Optima (`optima`) | `Optima, -apple-system, sans-serif` | Apple iOS system: Optima Regular |
+| Sans Serif | System Sans (`sans`) | `-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif` | WebKit `-apple-system` |
+| Typewriter & Mono | American Typewriter (`american-typewriter`) | `"American Typewriter", "Courier New", monospace` | Apple iOS system: American Typewriter |
+| Typewriter & Mono | Courier New (`courier-new`) | `"Courier New", Courier, monospace` | Apple iOS system: Courier New |
+| Typewriter & Mono | Menlo (`menlo`) | `Menlo, "Courier New", monospace` | Apple iOS system: Menlo Regular |
+| Handwritten | Bradley Hand (`bradley-hand`) | `"Bradley Hand", "Chalkboard SE", cursive` | Apple iOS system: Bradley Hand Bold |
+| Handwritten | Chalkboard SE (`chalkboard-se`) | `"Chalkboard SE", cursive` | Apple iOS system: Chalkboard SE Regular |
+| Handwritten | Marker Felt (`marker-felt`) | `"Marker Felt", "Chalkboard SE", cursive` | Apple iOS system: Marker Felt Thin |
+| Handwritten | Noteworthy (`noteworthy`) | `Noteworthy, "Chalkboard SE", cursive` | Apple iOS system: Noteworthy Light |
+| Character & Decorative | Copperplate (`copperplate`) | `Copperplate, Georgia, serif` | Apple iOS system: Copperplate |
+| Character & Decorative | Papyrus (`papyrus`) | `Papyrus, fantasy` | Apple iOS system: Papyrus |
+| Character & Decorative | Snell Roundhand (`snell-roundhand`) | `"Snell Roundhand", cursive` | Apple iOS system: Snell Roundhand |
+
+American Typewriter is proportional, grouped with mono faces for its typewriter character. Normal font weight resolves to available faces: Bradley Hand has Bold, Marker Felt has Thin/Wide, and Noteworthy has Light/Bold; no nonexistent Regular face is requested.
+
+**Excluded candidates:** Athelas is cataloged for iOS document support, rather than as an iOS system font. Big Caslon, Garamond, Skia, Comic Sans MS and plain Chalkboard are downloadable on iOS. Chalkboard SE is the preinstalled option and is included. Hoefler Text Ornaments is downloadable and excluded; ordinary Hoefler Text is included. This pass adds no bundled assets, font package, dependency, remote loading, `@font-face` or CSP change; `font-src 'none'` remains exact. No font is fetched by opening or choosing an option.
+
+**Model and picker:** existing keys/defaults retain their meaning; Georgia remains the reading default and Stowaway the App Style default. Known keys alone persist in the existing reading JSON. Missing/invalid preferences still resolve to Georgia, with no migration or automatic rewrite. Every font maps to a static app-owned CSS stack. Explicit five-category membership replaces the old implicit two-group filter; a checked-in fixture records the independently expected catalog, stack, native family and availability rationale without network-dependent tests.
+
+The compact current-font row and existing single native modal remain. The bounded 26-row list uses the existing ScrollView, compact separated rows, wrapping labels and minimum 44×44 targets. All 24 named families and System Sans have native own-family labels. System Serif retains **Preview in reader**, including its accessibility hint, because the installed React Native UIFont path cannot address WebKit's serif design safely. Checkmarks and accessible selected state follow persisted props; selection remains open for comparisons. Existing readiness/settlement gating prevents another comparison while a restyle is pending. App Style, theme and text size stay independent.
+
+**Backdrop:** only Reading Appearance opts into the shared modal's new dismissal option. A full-area, touch-only Pressable is a sibling behind the panel, not an ancestor of its content. Outside Appearance closes it; outside Reading Font returns to Appearance, exactly like its Done/back/escape action. A second outside tap closes Appearance. Controls, headings, blank panel space and scrolling are inside the panel and do not bubble to the backdrop. The backdrop is excluded from accessibility traversal; visible Done, modal isolation, focus, native back and accessibility escape remain. Dismissal never restores an old preference. App Style retains its prior dismissal behavior.
+
+**Reader safety and tests:** the trusted bridge, semantic restyle/settlement, locator revisions, Read completion, session ownership, canonical HTML/hash/block IDs and quiesced navigation code are unchanged. Existing eight non-default reflow cases remain, plus representative Georgia → Menlo and Georgia → Marker Felt nonuniform deep-paragraph geometry cases. This is deliberately representative rather than exhaustive geometry for all 26 choices. Real host SQLite still exercises save/reopen for every allowed key on v1/v6. A reader integration regression rapidly compares Avenir Next → Menlo → Marker Felt, tries blocked extra taps during each pending restyle, dismisses both surfaces via backdrop, remounts, and verifies the final font/theme/size, saved passage and unchanged Read state.
+
+**Validation:** on Node 22.23.3 / Windows, `npm.cmd run check` passed TypeScript, ESLint and **801 tests in 30 suites** (41 additional cases over 760). `npx.cmd expo install --check` reported dependencies current; `npx.cmd expo-doctor@latest` passed **21/21**; `npx.cmd expo export --platform ios` succeeded with 24 assets; `git diff --check` passed. No snapshots or dependency changes.
+
+Tests additionally cover catalog/category uniqueness, exact stack and platform-rationale coverage, invalid CSS fallback, all own-family mappings, all selected targets, five categories, large-text scroll/wrap structure, bottom-row/Done reachability and backdrop inside/outside behavior. Initial type checks caught a removed native style alias and two test typing issues; these were corrected. Backdrop tests deliberately query hidden elements because the touch-only sibling is excluded by modal accessibility isolation. One unchanged regression timed out while export ran concurrently; the complete final sequential run passed. Test budgets and existing assertions were not changed. After implementation and validation were complete, separate read-only correctness/security and UI reviews found no actionable issues in the 13-file diff. They checked platform availability and family names, static CSS and unchanged CSP, preference compatibility, representative reflow and rapid-comparison gating, picker structure and the narrow backdrop event hierarchy. The UI review also inspected the 320px/enlarged-text component preview. Neither reviewer reran validation; actual iOS font rendering, native touch hit-testing, Dynamic Type and VoiceOver remain unperformed device checks.
+
+Focused synthetic React Native Web previews inspect the catalog top/middle/bottom in light/dark and its bottom at emulated 2× text on a 320-point composition. The final rows and Done remain reachable. Desktop font fallbacks are not native font evidence, and component/static previews are not physical hit-testing or VoiceOver proof. Generated previews/logs/export remain ignored. New phone checks are all pending; deep passage semantics need representative family comparisons, not 26 separate exhaustive runs.
+
+Exact catalog/dismissal files (13):
+
+- `docs/UI_UX_Implementation.md`
+- `docs/UI_UX_Device_Checklist.md`
+- `src/domain/types.ts`
+- `src/domain/preferences.ts`
+- `src/reader/appearance.ts`
+- `src/ui/appearance-modal.tsx`
+- `src/ui/reader-chrome.tsx`
+- `src/ui/reading-fonts.tsx`
+- `tests/fixtures/reader-fonts.ts`
+- `tests/bridge.test.ts`
+- `tests/template.test.ts`
+- `tests/ui-components.test.tsx`
+- `tests/integration/i3-ui.test.tsx`
+
+Stowaway/Classic profiles, Library/Contents/chapter rows, Read/download marks, Continue/Story Actions, Add Story, reader chrome, Light/Paper/Dark colors, D1–D4 and source/storage architecture remain unchanged. No live source request, source-policy change, PR, merge or S2B work. The historical nine-font record below is superseded only where this section says so.
+
 ## Final reader-font refinement — 8 October 2026
 
 Focused follow-up on `95f41b148eae5071b2db9073409885f7420fa326`, still on `feat/ui-overhaul`. Owen reports that Stowaway is preferred, Classic remains useful, the chapter-first Contents and compact Read marks are good, and Light/Paper/Dark are good. This freezes that direction; it does not mark any new device checklist item passed. Only font selection changes in this pass.

@@ -84,7 +84,7 @@ function send(type: string, extra = {}) {
   screen.getByTestId('reader-web').props.onMessage({ nativeEvent: { data: JSON.stringify({ type, session,
     chapterId: chapter.id, contentHash: chapter.contentHash, ...extra }) } });
 }
-async function readyReader() { render(<Reader />); await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy()); act(() => send('ready')); }
+async function readyReader() { const view = render(<Reader />); await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy()); act(() => send('ready')); return view; }
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { release, promise }; }
 function handler(label: string) { return retainedPress(label); }
 function reopen(kind: 'retry' | 'termination') {
@@ -704,4 +704,52 @@ test('UI appearance persists preferences through the existing restyle flow witho
   await waitFor(() => expect(router.replace).toHaveBeenCalled());
   expect(commands.some((command) => command.includes('prepareForExit('))).toBe(true);
   expect(await repo.getLocator(chapter.id)).toEqual(locator);
+});
+
+test('rapid font comparisons settle independently and backdrop dismissal preserves the committed choice and passage', async () => {
+  const locator = savedPassage(); await repo.saveLocator(locator);
+  await repo.savePreferences({ theme: 'paper', fontSize: 24, font: 'georgia' });
+  let initial = await repo.getPreferences();
+  const save = jest.spyOn(repo, 'saveLocator'), read = jest.spyOn(repo, 'markChapterRead'), preferenceSave = jest.spyOn(repo, 'savePreferences');
+  jest.mocked(useStorage).mockImplementation(function useTestStorage() {
+    const [preferences, setPreferences] = useState<Preferences>(initial);
+    return { repository: repo, appStyle: 'stowaway', changeAppStyle: jest.fn(), preferences, imageWarning: null,
+      changePreferences: async (value) => { await repo.savePreferences(value); setPreferences(value); } };
+  });
+  const commands: string[] = [];
+  mockInject = (script) => { commands.push(script); acknowledge(script); };
+  const view = await readyReader();
+  const ready = () => screen.getByTestId('reader-web', { includeHiddenElements: true }).props.onMessage({ nativeEvent: { data: JSON.stringify({
+    type: 'ready', session, chapterId: chapter.id, contentHash: chapter.contentHash,
+  }) } });
+  fireEvent.press(screen.getByLabelText('Reading appearance')); fireEvent.press(screen.getByLabelText('Reading font'));
+  for (const [index, name, key] of [[1, 'Avenir Next', 'avenir-next'], [2, 'Menlo', 'menlo'], [3, 'Marker Felt', 'marker-felt']] as const) {
+    fireEvent.press(screen.getByLabelText('Use ' + name + ' reading font'));
+    fireEvent.press(screen.getByLabelText('Use Papyrus reading font'));
+    expect(preferenceSave).toHaveBeenCalledTimes(index);
+    expect(screen.getByLabelText('Use Papyrus reading font')).toBeDisabled();
+    await waitFor(() => expect(screen.getByLabelText('Use ' + name + ' reading font').props.accessibilityState.selected).toBe(true));
+    expect(commands.some((command) => command.includes(`restyle(24, "paper", "${key}")`))).toBe(true);
+    expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy();
+    if (index < 3) act(ready);
+  }
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
+  expect(screen.getByLabelText('Reading font')).toHaveAccessibilityValue({ text: 'Marker Felt' });
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
+  expect(screen.queryByRole('header', { name: 'Reading Appearance' })).toBeNull();
+  act(ready);
+  initial = await repo.getPreferences(); expect(initial).toEqual({ theme: 'paper', fontSize: 24, font: 'marker-felt' });
+  expect(preferenceSave).toHaveBeenCalledTimes(3);
+  expect(save).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled();
+  expect(await repo.getLocator(chapter.id)).toEqual(locator);
+  view.unmount(); await readyReader();
+  fireEvent.press(screen.getByLabelText('Reading appearance'));
+  expect(screen.getByLabelText('Reading font')).toHaveAccessibilityValue({ text: 'Marker Felt' });
+  expect(screen.getByLabelText('Reading font size 24')).toBeTruthy();
+  expect(screen.getByLabelText('Use paper reading theme').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
+  fireEvent.press(screen.getByLabelText('Return to story contents'));
+  await waitFor(() => expect(router.replace).toHaveBeenCalled());
+  expect(commands.some((command) => command.includes('prepareForExit('))).toBe(true);
+  expect(await repo.getLocator(chapter.id)).toEqual(locator); expect(read).not.toHaveBeenCalled();
 });

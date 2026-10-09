@@ -24,7 +24,12 @@ export interface Chapter extends ChapterSummary {
 }
 
 export type AppStyle = 'stowaway' | 'classic';
-export type ReaderFont = 'georgia' | 'baskerville' | 'palatino' | 'charter' | 'times' | 'serif' | 'sans' | 'avenir-next' | 'helvetica-neue';
+export type ReaderFont =
+  | "baskerville" | "charter" | "cochin" | "didot" | "georgia" | "hoefler-text" | "palatino" | "times" | "serif"
+  | "avenir" | "avenir-next" | "futura" | "gill-sans" | "helvetica-neue" | "optima" | "sans"
+  | "american-typewriter" | "courier-new" | "menlo"
+  | "bradley-hand" | "chalkboard-se" | "marker-felt" | "noteworthy"
+  | "copperplate" | "papyrus" | "snell-roundhand";
 export interface Preferences {
   theme: 'light' | 'paper' | 'dark';
   fontSize: number;

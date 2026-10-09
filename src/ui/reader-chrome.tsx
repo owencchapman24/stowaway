@@ -37,7 +37,7 @@ export function AppearanceSheet({ visible, preferences, disabled, onChange, onCl
   const [pickingFont, setPickingFont] = useState(false);
   if (!visible && pickingFont) setPickingFont(false);
   const font = normalizePreferences(preferences).font;
-  return <AppearanceModal visible={visible} title={pickingFont ? 'Reading Font' : 'Reading Appearance'}
+  return <AppearanceModal visible={visible} dismissOnBackdrop title={pickingFont ? 'Reading Font' : 'Reading Appearance'}
     onClose={pickingFont ? () => setPickingFont(false) : onClose}>
     {pickingFont ? <ReadingFontList font={font} disabled={disabled} onSelect={(value) => onChange({ ...preferences, font: value })} /> : <>
           <AppText>Font</AppText>

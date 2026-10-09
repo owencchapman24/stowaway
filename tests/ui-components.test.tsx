@@ -5,13 +5,31 @@ import { Button, ChapterRow, InlineBanner, StoryRow, storySummary } from '../src
 import { AppearanceSheet, ReaderBottomBar, ReaderTopBar } from '../src/ui/reader-chrome';
 import { AppStyleContext, profiles } from '../src/ui/theme';
 import { READER_FONTS } from '../src/domain/preferences';
-import { READING_FONT_LABELS } from '../src/ui/reading-fonts';
+import { READING_FONT_GROUPS, READING_FONT_LABELS } from '../src/ui/reading-fonts';
+import { AppStyleSheet } from '../src/ui/appearance-modal';
+import { expectedReadingFonts, FONT_AVAILABILITY_SOURCES } from './fixtures/reader-fonts';
 
 const entry = { id: 'spacebattles:thread:1:post:2', postId: '2', title: 'A very long chapter title that should wrap naturally at larger text sizes',
   position: 13, sourceUrl: '', downloaded: true, isRead: false };
 const story = { id: 'spacebattles:thread:1', source: 'spacebattles' as const, threadId: '1', title: entry.title, author: 'Synthetic author',
   sourceUrl: '', categoryId: '9', total: 38, downloaded: 4, unread: 34, lastUpdateAttemptAt: null, lastUpdateSuccessAt: null };
 afterEach(() => jest.restoreAllMocks());
+
+test('font catalog and categories uniquely cover the reviewed platform allowlist', () => {
+  const keys = expectedReadingFonts.map((font) => font.key);
+  expect(keys).toHaveLength(26); expect(new Set(keys).size).toBe(26);
+  expect([...READER_FONTS].sort()).toEqual([...keys].sort());
+  const grouped = READING_FONT_GROUPS.flatMap((group) => group.fonts.map((key) => ({ key, group: group.title })));
+  expect(grouped).toEqual(expectedReadingFonts.map(({ key, group }) => ({ key, group })));
+  expect(new Set(grouped.map((font) => font.key)).size).toBe(26);
+  expect(new Set(READING_FONT_GROUPS.map((group) => group.title)).size).toBe(5);
+  for (const font of expectedReadingFonts) {
+    expect(READING_FONT_LABELS[font.key]).toBe(font.name);
+    expect(font.platformFace.length).toBeGreaterThan(0);
+    expect(FONT_AVAILABILITY_SOURCES[font.evidence]).toMatch(/^https:\/\/(developer\.apple\.com|webkit\.org)\//);
+    if (font.key !== 'serif' && font.key !== 'sans') expect(font.evidence).toBe('apple');
+  }
+});
 
 test.each(READER_FONTS)('the %s reader font exposes selected state and keeps a full target', (font) => {
   const change = jest.fn(); render(<AppearanceSheet visible preferences={{ theme: 'paper', fontSize: 20, font }} disabled={false} onChange={change} onClose={() => {}} />);
@@ -38,10 +56,13 @@ test('one current-font row opens a grouped picker within one modal and selection
   expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy();
   expect(screen.getByRole('header', { name: 'Bookish Serif' })).toBeTruthy();
   expect(screen.getByRole('header', { name: 'Sans Serif' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Typewriter & Mono' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Handwritten' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Character & Decorative' })).toBeTruthy();
   expect(screen.queryByLabelText('Increase reading font size')).toBeNull();
-  const names = ['Baskerville', 'Georgia', 'Palatino', 'Charter', 'Times New Roman', 'System Serif', 'System Sans', 'Avenir Next', 'Helvetica Neue'];
+  const names = expectedReadingFonts.map((font) => font.name);
   for (const name of names) expect(screen.getByLabelText('Use ' + name + ' reading font')).toBeTruthy();
-  expect(screen.getAllByLabelText(/Use .* reading font/)).toHaveLength(9);
+  expect(screen.getAllByLabelText(/Use .* reading font/)).toHaveLength(26);
   fireEvent.press(screen.getByLabelText('Use Avenir Next reading font'));
   expect(change).toHaveBeenLastCalledWith({ theme: 'paper', fontSize: 24, font: 'avenir-next' });
   expect(screen.getByLabelText('Use Georgia reading font').props.accessibilityState.selected).toBe(true);
@@ -63,8 +84,8 @@ test('iOS font rows preview addressable families and disclose the system-serif p
   jest.replaceProperty(Native.Platform, 'OS', 'ios');
   render(<AppearanceSheet visible preferences={{ theme: 'light', fontSize: 20 }} disabled={false} onChange={jest.fn()} onClose={jest.fn()} />);
   fireEvent.press(screen.getByLabelText('Reading font'));
-  for (const [name, family] of [['Baskerville', 'Baskerville'], ['Georgia', 'Georgia'], ['Palatino', 'Palatino'], ['Charter', 'Charter'], ['Times New Roman', 'Times New Roman'], ['System Sans', 'System'], ['Avenir Next', 'Avenir Next'], ['Helvetica Neue', 'Helvetica Neue']]) {
-    expect(screen.getByText(name!)).toHaveStyle({ fontFamily: family });
+  for (const { name, nativeFamily } of expectedReadingFonts) {
+    if (nativeFamily !== null) expect(screen.getByText(name)).toHaveStyle({ fontFamily: nativeFamily });
   }
   expect(within(screen.getByLabelText('Use System Serif reading font')).getByText('Preview in reader')).toBeTruthy();
   expect(Native.StyleSheet.flatten(screen.getByText('System Serif').props.style).fontFamily).toBeUndefined();
@@ -89,6 +110,7 @@ test('font picker keeps scrollable, wrapping rows and Done reachable at large te
     fireEvent.press(screen.getByLabelText('Reading font'));
     const scroll = screen.UNSAFE_getByType(Native.ScrollView);
     expect(scroll.props.scrollEnabled).not.toBe(false);
+    expect(screen.getAllByLabelText(/Use .* reading font/)).toHaveLength(26);
     for (const row of screen.getAllByLabelText(/Use .* reading font/)) {
       expect(row).toBeEnabled(); expect(row).toHaveStyle({ minHeight: 44, minWidth: 44 });
       expect(Native.StyleSheet.flatten(row.props.style).height).toBeUndefined();
@@ -96,7 +118,49 @@ test('font picker keeps scrollable, wrapping rows and Done reachable at large te
     expect(screen.getByText('Times New Roman').props.numberOfLines).toBeUndefined();
     expect(screen.getByText('Times New Roman').props.allowFontScaling).not.toBe(false);
     expect(within(scroll).getByLabelText('Close reading font')).toBeEnabled();
+    expect(within(scroll).getByLabelText('Use Snell Roundhand reading font')).toBeEnabled();
   } finally { act(() => Native.Dimensions.set({ window: original })); }
+});
+
+test('appearance backdrop dismisses only outside taps and keeps Done available', () => {
+  const close = jest.fn(), change = jest.fn();
+  render(<AppearanceSheet visible preferences={{ theme: 'paper', fontSize: 20 }} disabled={false} onChange={change} onClose={close} />);
+  const backdrop = screen.getByTestId('appearance-backdrop', { includeHiddenElements: true });
+  expect(backdrop.props.accessible).toBe(false); expect(backdrop.props.importantForAccessibility).toBe('no');
+  fireEvent.press(screen.getByTestId('appearance-panel'));
+  fireEvent.press(screen.getByText('Reading Appearance'));
+  fireEvent.press(screen.getByText('Font'));
+  fireEvent.press(screen.getByLabelText('Increase reading font size'));
+  fireEvent.press(screen.getByLabelText('Use dark reading theme'));
+  expect(change).toHaveBeenCalledTimes(2); expect(close).not.toHaveBeenCalled();
+  fireEvent.press(backdrop); expect(close).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('Close reading appearance')).toBeEnabled();
+});
+
+test('font backdrop returns to Appearance while inside picker taps never dismiss it', () => {
+  const close = jest.fn(), change = jest.fn();
+  const props = { visible: true, disabled: false, onChange: change, onClose: close };
+  const view = render(<AppearanceSheet {...props} preferences={{ theme: 'paper', fontSize: 24, font: 'georgia' }} />);
+  fireEvent.press(screen.getByLabelText('Reading font'));
+  fireEvent.press(screen.getByTestId('appearance-panel'));
+  fireEvent.press(screen.getByRole('header', { name: 'Handwritten' }));
+  fireEvent.press(screen.getByLabelText('Use Marker Felt reading font'));
+  expect(change).toHaveBeenCalledWith({ theme: 'paper', fontSize: 24, font: 'marker-felt' });
+  expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy(); expect(close).not.toHaveBeenCalled();
+  view.rerender(<AppearanceSheet {...props} preferences={{ theme: 'paper', fontSize: 24, font: 'marker-felt' }} />);
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
+  expect(screen.getByRole('header', { name: 'Reading Appearance' })).toBeTruthy();
+  expect(screen.getByLabelText('Reading font')).toHaveAccessibilityValue({ text: 'Marker Felt' }); expect(close).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true })); expect(close).toHaveBeenCalledTimes(1);
+  expect(change).toHaveBeenCalledTimes(1);
+});
+
+test('App Style keeps its existing dismissal behavior', () => {
+  const close = jest.fn();
+  render(<AppStyleSheet visible value="stowaway" saving={false} error={null} onChange={jest.fn()} onClose={close} />);
+  expect(screen.queryByTestId('appearance-backdrop', { includeHiddenElements: true })).toBeNull();
+  fireEvent.press(screen.getByTestId('appearance-panel')); expect(close).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText('Close app style')); expect(close).toHaveBeenCalledTimes(1);
 });
 
 test.each([['stowaway', 'light'], ['stowaway', 'dark'], ['classic', 'light'], ['classic', 'dark']] as const)('%s %s active text/background pairs meet normal-text contrast', (profile, mode) => {

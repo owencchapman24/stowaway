@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { AccessibilityInfo, findNodeHandle, Modal, ScrollView, Text, View } from 'react-native';
+import { AccessibilityInfo, findNodeHandle, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { AppStyle } from '../domain/types';
 import { AppText, Button, InlineBanner, uiStyles } from './components';
 import { useTheme } from './theme';
 
-export function AppearanceModal({ visible, title, onClose, children }: {
-  visible: boolean; title: string; onClose(): void; children: ReactNode;
+export function AppearanceModal({ visible, title, onClose, children, dismissOnBackdrop = false }: {
+  visible: boolean; title: string; onClose(): void; children: ReactNode; dismissOnBackdrop?: boolean;
 }) {
   const theme = useTheme();
   const heading = useRef<Text>(null);
@@ -17,7 +17,9 @@ export function AppearanceModal({ visible, title, onClose, children }: {
   useEffect(() => { if (visible) focusHeading(); }, [visible, title, focusHeading]);
   return <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} onShow={focusHeading}>
     <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000066' }}>
-      <SafeAreaView accessibilityViewIsModal onAccessibilityEscape={onClose} style={{ maxHeight: '90%', backgroundColor: theme.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
+      {dismissOnBackdrop && <Pressable testID="appearance-backdrop" accessible={false} importantForAccessibility="no" focusable={false}
+        style={StyleSheet.absoluteFill} onPress={onClose} />}
+      <SafeAreaView testID="appearance-panel" accessibilityViewIsModal onAccessibilityEscape={onClose} style={{ maxHeight: '90%', backgroundColor: theme.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
         <ScrollView key={title} contentContainerStyle={{ padding: 20, gap: 20 }}>
           <Text ref={heading} accessibilityRole="header" style={{ color: theme.textPrimary, fontSize: 20, fontWeight: '600' }}>{title}</Text>
           {children}

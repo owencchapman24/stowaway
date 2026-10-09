@@ -1,26 +1,75 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { READER_FONTS } from '../domain/preferences';
 import type { ReaderFont } from '../domain/types';
 import { READER_FONT_STACKS } from '../reader/appearance';
 import { AppText } from './components';
 import { useTheme } from './theme';
 
 export const READING_FONT_LABELS: Record<ReaderFont, string> = {
-  baskerville: 'Baskerville', georgia: 'Georgia', palatino: 'Palatino', charter: 'Charter', times: 'Times New Roman',
-  serif: 'System Serif', sans: 'System Sans', 'avenir-next': 'Avenir Next', 'helvetica-neue': 'Helvetica Neue',
+  "baskerville": "Baskerville",
+  "charter": "Charter",
+  "cochin": "Cochin",
+  "didot": "Didot",
+  "georgia": "Georgia",
+  "hoefler-text": "Hoefler Text",
+  "palatino": "Palatino",
+  "times": "Times New Roman",
+  "serif": "System Serif",
+  "avenir": "Avenir",
+  "avenir-next": "Avenir Next",
+  "futura": "Futura",
+  "gill-sans": "Gill Sans",
+  "helvetica-neue": "Helvetica Neue",
+  "optima": "Optima",
+  "sans": "System Sans",
+  "american-typewriter": "American Typewriter",
+  "courier-new": "Courier New",
+  "menlo": "Menlo",
+  "bradley-hand": "Bradley Hand",
+  "chalkboard-se": "Chalkboard SE",
+  "marker-felt": "Marker Felt",
+  "noteworthy": "Noteworthy",
+  "copperplate": "Copperplate",
+  "papyrus": "Papyrus",
+  "snell-roundhand": "Snell Roundhand",
 };
 // Named iOS system families, not downloaded assets or source-provided names.
 // React Native's UIFont family path cannot request WebKit's ui-serif design.
 const IOS_PREVIEWS: Partial<Record<ReaderFont, string>> = {
-  baskerville: 'Baskerville', georgia: 'Georgia', palatino: 'Palatino', charter: 'Charter', times: 'Times New Roman',
-  sans: 'System', 'avenir-next': 'Avenir Next', 'helvetica-neue': 'Helvetica Neue',
+  "baskerville": "Baskerville",
+  "charter": "Charter",
+  "cochin": "Cochin",
+  "didot": "Didot",
+  "georgia": "Georgia",
+  "hoefler-text": "Hoefler Text",
+  "palatino": "Palatino",
+  "times": "Times New Roman",
+  "avenir": "Avenir",
+  "avenir-next": "Avenir Next",
+  "futura": "Futura",
+  "gill-sans": "Gill Sans",
+  "helvetica-neue": "Helvetica Neue",
+  "optima": "Optima",
+  "sans": "System",
+  "american-typewriter": "American Typewriter",
+  "courier-new": "Courier New",
+  "menlo": "Menlo",
+  "bradley-hand": "Bradley Hand",
+  "chalkboard-se": "Chalkboard SE",
+  "marker-felt": "Marker Felt",
+  "noteworthy": "Noteworthy",
+  "copperplate": "Copperplate",
+  "papyrus": "Papyrus",
+  "snell-roundhand": "Snell Roundhand",
 };
 function previewFamily(font: ReaderFont): string | undefined {
   return Platform.OS === 'ios' ? IOS_PREVIEWS[font] : Platform.OS === 'web' ? READER_FONT_STACKS[font] : undefined;
 }
-const groups: { title: string; fonts: readonly ReaderFont[] }[] = [
-  { title: 'Bookish Serif', fonts: READER_FONTS.filter((font) => !['sans', 'avenir-next', 'helvetica-neue'].includes(font)) },
-  { title: 'Sans Serif', fonts: ['sans', 'avenir-next', 'helvetica-neue'] },
+export const READING_FONT_GROUPS: { title: string; fonts: readonly ReaderFont[] }[] = [
+  { title: "Bookish Serif", fonts: ["baskerville", "charter", "cochin", "didot", "georgia", "hoefler-text", "palatino", "times", "serif"] },
+  { title: "Sans Serif", fonts: ["avenir", "avenir-next", "futura", "gill-sans", "helvetica-neue", "optima", "sans"] },
+  { title: "Typewriter & Mono", fonts: ["american-typewriter", "courier-new", "menlo"] },
+  { title: "Handwritten", fonts: ["bradley-hand", "chalkboard-se", "marker-felt", "noteworthy"] },
+  { title: "Character & Decorative", fonts: ["copperplate", "papyrus", "snell-roundhand"] },
 ];
 
 export function CurrentReadingFont({ font, disabled, onPress }: { font: ReaderFont; disabled: boolean; onPress(): void }) {
@@ -35,7 +84,7 @@ export function CurrentReadingFont({ font, disabled, onPress }: { font: ReaderFo
 
 export function ReadingFontList({ font, disabled, onSelect }: { font: ReaderFont; disabled: boolean; onSelect(value: ReaderFont): void }) {
   const theme = useTheme();
-  return <View style={{ gap: 20 }}>{groups.map((group) => <View key={group.title}>
+  return <View style={{ gap: 20 }}>{READING_FONT_GROUPS.map((group) => <View key={group.title}>
     <Text accessibilityRole="header" style={{ color: theme.textSecondary, fontSize: 16 }}>{group.title}</Text>
     {group.fonts.map((value) => {
       const family = previewFamily(value);

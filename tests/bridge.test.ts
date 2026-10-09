@@ -127,7 +127,7 @@ function sampleAt(top: number) {
   return messages.filter((message) => message.type === 'position').at(-1)!.locator!;
 }
 
-const fontGeometry: Record<string, number> = { palatino: 76, serif: 66, sans: 54, baskerville: 72, charter: 82, times: 48, 'avenir-next': 86, 'helvetica-neue': 52 };
+const fontGeometry: Record<string, number> = { palatino: 76, serif: 66, sans: 54, baskerville: 72, charter: 82, times: 48, 'avenir-next': 86, 'helvetica-neue': 52, menlo: 92, 'marker-felt': 104 };
 test.each(Object.keys(fontGeometry))('font %s reflow restores a deep semantic paragraph, not progression, without transient saves or Read completion', (font) => {
   const canonical = importedLayout(Array.from({ length: 100 }, (_, i) => `<p>Generated paragraph ${i}.</p>`).join(''),
     (_element, index) => index === 0 ? [0, 6000] : [(index - 1) * 60, 42]);
