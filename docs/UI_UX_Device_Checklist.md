@@ -73,3 +73,12 @@ Owen reports preferring Stowaway to SpaceBattles in Safari. This records that fe
 - [ ] 50. With the app already running offline, try the full catalog and reopen local chapters. Note any missing face/fallback; this is not S2B Metro-free cold-start evidence.
 - [ ] 51. Tap the dimmed area outside Appearance: it closes. Outside Font: it returns to Appearance; another outside tap closes. Done/back/escape still work. Tap controls, labels and blank panel space and scroll inside: no accidental dismissal or preference reversal.
 - [ ] 52. At large Dynamic Type and with VoiceOver, reach every group, the bottom font and Done. Check preview readability, wrapped labels, selected-state announcements, modal focus and outside-tap comfort.
+
+## Partial reading-sheet checks
+
+Owen reports that the previous font picker covered essentially the whole iPhone screen. These checks apply to the partial-sheet follow-up; no new physical pass is inferred. The current font catalog remains 26 choices in five groups.
+
+- [ ] 53. Open Appearance, then Font. At ordinary text size each panel uses roughly the lower half of usable screen height, leaving real chapter prose visible. Compare several different fonts without closing the picker; after each restyle settles, the exposed passage visibly uses the selected font.
+- [ ] 54. Scroll to the final font and scroll the parent controls on a small viewport. Done stays pinned and reachable. Scrolls/taps inside do not dismiss or interact with the reader; outside Font returns to Appearance and outside Appearance closes it. Applied choices survive dismissal/reopening.
+- [ ] 55. Try larger Dynamic Type. Sheets may grow, but keep exposed reader space; headings, controls and the bottom font remain reachable without safe-area clipping. With VoiceOver, focus enters the sheet, selected states are announced and reader content remains outside modal navigation. Done/back/escape retain the existing hierarchy. The app's portrait lock is unchanged; landscape testing is synthetic only.
+- [ ] 56. At a recognizable saved passage, compare representative serif/sans/mono/character fonts through the sheets, then dismiss, navigate and reopen. Confirm the same passage, no Read completion merely from reflow, normal reader interaction after closing, and already-running offline behavior. This is not S2B evidence.

@@ -248,7 +248,8 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   const index = chapters.findIndex((chapter) => chapter.id === chapterId);
   const previous = index >= 0 ? chapters[index - 1] : undefined;
   const next = index >= 0 ? chapters[index + 1] : undefined;
-  return <AppScreen><View style={{ flex: 1 }} accessibilityElementsHidden={appearance} importantForAccessibility={appearance ? 'no-hide-descendants' : 'auto'}>
+  return <AppScreen><View testID="reader-content" style={{ flex: 1 }} pointerEvents={appearance ? 'none' : 'auto'}
+    accessibilityElementsHidden={appearance} importantForAccessibility={appearance ? 'no-hide-descendants' : 'auto'}>
     <Stack.Screen options={{ gestureEnabled: false }} />
     <ReaderTopBar title={model?.chapter.title ?? 'Reader'} disabled={settling} appearanceDisabled={!ready || settling}
       onContents={() => { void go(null); }} onAppearance={() => setAppearance(true)} />

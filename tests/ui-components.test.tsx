@@ -1,5 +1,6 @@
 
 import * as Native from 'react-native';
+import { SafeAreaInsetsContext, SafeAreaView } from 'react-native-safe-area-context';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { Button, ChapterRow, InlineBanner, StoryRow, storySummary } from '../src/ui/components';
 import { AppearanceSheet, ReaderBottomBar, ReaderTopBar } from '../src/ui/reader-chrome';
@@ -117,8 +118,68 @@ test('font picker keeps scrollable, wrapping rows and Done reachable at large te
     }
     expect(screen.getByText('Times New Roman').props.numberOfLines).toBeUndefined();
     expect(screen.getByText('Times New Roman').props.allowFontScaling).not.toBe(false);
-    expect(within(scroll).getByLabelText('Close reading font')).toBeEnabled();
+    expect(within(scroll).queryByLabelText('Close reading font')).toBeNull();
+    expect(screen.getByLabelText('Close reading font')).toBeEnabled();
+    expect(screen.getByLabelText('Close reading font')).toHaveStyle({ minHeight: 44, minWidth: 44 });
     expect(within(scroll).getByLabelText('Use Snell Roundhand reading font')).toBeEnabled();
+  } finally { act(() => Native.Dimensions.set({ window: original })); }
+});
+
+test.each([
+  { width: 320, height: 568, top: 20, bottom: 0 },
+  { width: 393, height: 852, top: 59, bottom: 34 },
+  { width: 844, height: 390, top: 0, bottom: 21 },
+])('reading sheets leave exposed space at $width × $height and keep scrolling separate from dismissal', ({ width, height, top, bottom }) => {
+  const original = Native.Dimensions.get('window');
+  act(() => Native.Dimensions.set({ window: { ...original, width, height, fontScale: 1 } }));
+  try {
+    const close = jest.fn();
+    render(<SafeAreaInsetsContext.Provider value={{ top, bottom, left: 0, right: 0 }}>
+      <AppearanceSheet visible preferences={{ theme: 'paper', fontSize: 20 }} disabled={false} onChange={jest.fn()} onClose={close} />
+    </SafeAreaInsetsContext.Provider>);
+    const panel = () => Native.StyleSheet.flatten(screen.getByTestId('appearance-panel').props.style);
+    const limit = panel().maxHeight;
+    expect(typeof limit).toBe('number');
+    expect(limit - bottom).toBeGreaterThan((height - top - bottom) * .4);
+    expect(limit - bottom).toBeLessThan((height - top - bottom) * .6);
+    expect(panel().height).toBeUndefined(); // Short parent content is not stretched to a fixed height.
+    expect(screen.getByTestId('appearance-overlay', { includeHiddenElements: true })).toHaveStyle({ justifyContent: 'flex-end' });
+    expect(screen.UNSAFE_getByType(Native.Modal).props.transparent).toBe(true);
+    expect(screen.getByTestId('appearance-panel').props.accessibilityViewIsModal).toBe(true);
+    expect(screen.UNSAFE_getAllByType(SafeAreaView).find((view) => view.props.testID === 'appearance-panel')?.props.edges).toEqual(['bottom', 'left', 'right']);
+    expect(within(screen.UNSAFE_getByType(Native.ScrollView)).queryByLabelText('Close reading appearance')).toBeNull();
+    fireEvent.press(screen.getByLabelText('Reading font'));
+    expect(panel().maxHeight).toBe(limit);
+    const scroll = screen.UNSAFE_getByType(Native.ScrollView);
+    expect(Native.StyleSheet.flatten(scroll.props.style)).toMatchObject({ flexShrink: 1 });
+    expect(scroll.props.scrollEnabled).not.toBe(false);
+    expect(within(scroll).getByLabelText('Use Snell Roundhand reading font')).toBeTruthy();
+    expect(within(scroll).queryByRole('header', { name: 'Reading Font' })).toBeNull();
+    expect(within(scroll).queryByLabelText('Close reading font')).toBeNull();
+    fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 600 } } });
+    fireEvent(scroll, 'scrollBeginDrag', { nativeEvent: { contentOffset: { x: 0, y: 600 } } });
+    expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy(); expect(close).not.toHaveBeenCalled();
+    fireEvent(screen.getByTestId('appearance-panel'), 'accessibilityEscape');
+    expect(screen.getByRole('header', { name: 'Reading Appearance' })).toBeTruthy(); expect(close).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true })); expect(close).toHaveBeenCalledTimes(1);
+  } finally { act(() => Native.Dimensions.set({ window: original })); }
+});
+
+test('reading sheet responds to larger text and rotation while retaining exposed backdrop and pinned Done', () => {
+  const original = Native.Dimensions.get('window');
+  act(() => Native.Dimensions.set({ window: { ...original, width: 320, height: 640, fontScale: 1 } }));
+  try {
+    render(<AppearanceSheet visible preferences={{ theme: 'light', fontSize: 20 }} disabled={false} onChange={jest.fn()} onClose={jest.fn()} />);
+    fireEvent.press(screen.getByLabelText('Reading font'));
+    const limit = () => Native.StyleSheet.flatten(screen.getByTestId('appearance-panel').props.style).maxHeight;
+    const normal = limit();
+    act(() => Native.Dimensions.set({ window: { ...original, width: 320, height: 640, fontScale: 2.5 } }));
+    const large = limit(); expect(large).toBeGreaterThan(normal); expect(large).toBeLessThan(640 * .8);
+    act(() => Native.Dimensions.set({ window: { ...original, width: 640, height: 320, fontScale: 2.5 } }));
+    expect(limit()).toBeLessThan(large); expect(limit()).toBeLessThan(320 * .8);
+    expect(screen.getByLabelText('Close reading font')).toBeEnabled();
+    expect(within(screen.UNSAFE_getByType(Native.ScrollView)).getByLabelText('Use Snell Roundhand reading font')).toBeEnabled();
+    expect(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true })).toBeTruthy();
   } finally { act(() => Native.Dimensions.set({ window: original })); }
 });
 
@@ -159,6 +220,9 @@ test('App Style keeps its existing dismissal behavior', () => {
   const close = jest.fn();
   render(<AppStyleSheet visible value="stowaway" saving={false} error={null} onChange={jest.fn()} onClose={close} />);
   expect(screen.queryByTestId('appearance-backdrop', { includeHiddenElements: true })).toBeNull();
+  expect(screen.getByTestId('appearance-panel')).toHaveStyle({ maxHeight: '90%' });
+  expect(screen.getByTestId('appearance-overlay', { includeHiddenElements: true })).toHaveStyle({ backgroundColor: '#00000066' });
+  expect(within(screen.UNSAFE_getByType(Native.ScrollView)).getByLabelText('Close app style')).toBeEnabled();
   fireEvent.press(screen.getByTestId('appearance-panel')); expect(close).not.toHaveBeenCalled();
   fireEvent.press(screen.getByLabelText('Close app style')); expect(close).toHaveBeenCalledTimes(1);
 });

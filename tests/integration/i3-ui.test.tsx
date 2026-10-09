@@ -4,10 +4,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { AppState } from 'react-native';
+import { AppState, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import * as Crypto from 'expo-crypto';
+import WebView from 'react-native-webview';
 import StoryContents from '../../src/app/story';
 import Library from '../../src/app/index';
 import Reader from '../../src/app/reader';
@@ -723,10 +724,16 @@ test('rapid font comparisons settle independently and backdrop dismissal preserv
   const commands: string[] = [];
   mockInject = (script) => { commands.push(script); acknowledge(script); };
   const view = await readyReader();
+  const readerSource = screen.UNSAFE_getByType(WebView).props.source;
+  expect(screen.getByTestId('reader-content').props.pointerEvents).toBe('auto');
   const ready = () => screen.getByTestId('reader-web', { includeHiddenElements: true }).props.onMessage({ nativeEvent: { data: JSON.stringify({
     type: 'ready', session, chapterId: chapter.id, contentHash: chapter.contentHash,
   }) } });
   fireEvent.press(screen.getByLabelText('Reading appearance')); fireEvent.press(screen.getByLabelText('Reading font'));
+  const hiddenReader = screen.getByTestId('reader-content', { includeHiddenElements: true });
+  expect(hiddenReader.props.pointerEvents).toBe('none');
+  expect(hiddenReader.props.accessibilityElementsHidden).toBe(true);
+  expect(hiddenReader.props.importantForAccessibility).toBe('no-hide-descendants');
   for (const [index, name, key] of [[1, 'Avenir Next', 'avenir-next'], [2, 'Menlo', 'menlo'], [3, 'Marker Felt', 'marker-felt']] as const) {
     fireEvent.press(screen.getByLabelText('Use ' + name + ' reading font'));
     fireEvent.press(screen.getByLabelText('Use Papyrus reading font'));
@@ -735,12 +742,20 @@ test('rapid font comparisons settle independently and backdrop dismissal preserv
     await waitFor(() => expect(screen.getByLabelText('Use ' + name + ' reading font').props.accessibilityState.selected).toBe(true));
     expect(commands.some((command) => command.includes(`restyle(24, "paper", "${key}")`))).toBe(true);
     expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy();
-    if (index < 3) act(ready);
+    expect(screen.UNSAFE_getByType(WebView).props.source).toEqual(readerSource);
+    expect(createRenderFile).toHaveBeenCalledTimes(1);
+    if (index < 3) {
+      act(ready);
+      expect(StyleSheet.flatten(screen.UNSAFE_getByType(WebView).props.style)).toMatchObject({ opacity: 1 });
+      expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy();
+    }
   }
   fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
   expect(screen.getByLabelText('Reading font')).toHaveAccessibilityValue({ text: 'Marker Felt' });
   fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
   expect(screen.queryByRole('header', { name: 'Reading Appearance' })).toBeNull();
+  expect(screen.getByTestId('reader-content').props.pointerEvents).toBe('auto');
+  expect(screen.getByTestId('reader-content').props.accessibilityElementsHidden).toBe(false);
   act(ready);
   initial = await repo.getPreferences(); expect(initial).toEqual({ theme: 'paper', fontSize: 24, font: 'marker-felt' });
   expect(preferenceSave).toHaveBeenCalledTimes(3);
