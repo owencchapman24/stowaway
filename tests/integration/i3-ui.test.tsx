@@ -426,8 +426,12 @@ test('delayed pre-correction refocus read cannot overwrite newer manual SQL/scre
 test('retained manual action cannot mutate a pending entry hidden by a later COMPLETE removal', async () => {
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Mark Generated 103 as read')).toBeEnabled());
   const stale = handler('Mark Generated 103 as read'); await repo.reconcileManifest(id, metadata, manifest(['101', '102']), 2);
-  act(() => { mockBlur(); mockRefocus(); }); await waitFor(() => expect(screen.queryByLabelText('Mark Generated 103 as read')).toBeNull());
-  act(() => stale()); expect(await host.db.getFirstAsync('SELECT is_read FROM threadmark_entries WHERE story_id = ? AND post_id = ?', id, '103')).toEqual({ is_read: 0 });
+  // Settle the asynchronous focus refresh before polling for the removed row.
+  await act(async () => { mockBlur(); mockRefocus(); }); await waitFor(() => expect(screen.queryByLabelText('Mark Generated 103 as read')).toBeNull());
+  const changeRead = jest.spyOn(repo, 'setEntryRead');
+  await act(async () => { stale(); });
+  expect(changeRead).not.toHaveBeenCalled();
+  expect(await host.db.getFirstAsync('SELECT is_read FROM threadmark_entries WHERE story_id = ? AND post_id = ?', id, '103')).toEqual({ is_read: 0 });
 });
 test.each(['Next chapter', 'Previous chapter', 'Return to story contents'])('automatic Read survives immediate %s; neighboring entry and locator remain independent', async (label) => {
   await repo.commitDownloadedChapter(id, '103', await prepareContent('<p>Synthetic next.</p>', digest));
