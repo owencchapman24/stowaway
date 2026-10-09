@@ -1,3 +1,5 @@
+import { READER_FONTS } from '../domain/preferences';
+
 // This is the only script embedded in the reader. Never accept source script or eval messages.
 export const POSITION_BRIDGE = String.raw`
 (function () {
@@ -188,14 +190,17 @@ export const POSITION_BRIDGE = String.raw`
       send({ type: 'quiesced', handoffId: handoffId });
     },
     flush: function () { flush('flush'); send({ type: 'flushed' }); },
-    restyle: function (fontSize, theme) {
+    restyle: function (fontSize, theme, font) {
+      if (font === undefined) font = 'georgia';
       if (!ready || !Number.isFinite(fontSize) || fontSize < 14 || fontSize > 32 ||
-        (theme !== 'light' && theme !== 'dark')) return;
+        (theme !== 'light' && theme !== 'paper' && theme !== 'dark') ||
+        ${JSON.stringify(READER_FONTS)}.indexOf(font) < 0) return;
       const locator = snapshot();
       flush('flush');
       send({ type: 'layout-start' });
       document.documentElement.style.setProperty('--font-size', fontSize + 'px');
       document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.font = font;
       settle(locator);
     }
   });

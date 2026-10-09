@@ -4,6 +4,12 @@ export class ImportFailure extends Error {
 // Across screens and repository handles, released only after all commits settle.
 const activeStories = new Set<string>();
 const localWrites = new Map<string, number>();
+const settledListeners = new Set<(id: string) => void>();
+/** Source/image/management settlement, distinct from local reader writes. */
+export function subscribeStorySettled(listener: (id: string) => void) {
+  settledListeners.add(listener);
+  return () => { settledListeners.delete(listener); };
+}
 const listeners = new Set<() => void>();
 export function isStoryBusy(id: string) { return activeStories.has(id) || localWrites.has(id); }
 export function subscribeStoryOperations(listener: () => void) {
@@ -16,7 +22,7 @@ export function acquireStory(id: string): () => void {
   activeStories.add(id);
   changed();
   let released = false;
-  return () => { if (!released) { released = true; activeStories.delete(id); changed(); } };
+  return () => { if (!released) { released = true; activeStories.delete(id); settledListeners.forEach((listener) => listener(id)); changed(); } };
 }
 
 /** Local reader writes may queue together, but cannot overlap a source/management owner. */

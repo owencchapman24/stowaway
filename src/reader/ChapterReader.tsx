@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import * as Crypto from 'expo-crypto';
 import type { Chapter, ChapterSummary, Preferences } from '../domain/types';
+import { normalizePreferences } from '../domain/preferences';
+import { READER_PAPER } from './appearance';
 import type { Repository } from '../storage/repository';
 import { createRenderFile } from '../storage/files';
-import { Control, ReaderControls } from '../reader/controls';
+import { AppScreen, Button, InlineBanner, LoadingState } from '../ui/components';
+import { AppearanceSheet, ReaderBottomBar, ReaderTopBar } from '../ui/reader-chrome';
 import { PositionSession, parseMessage } from '../reader/position';
 import { allowReaderNavigation } from '../reader/navigation';
 import { ReadEndSession, type ReadCompletion } from './read-state';
@@ -46,6 +48,8 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   const modelRef = useRef<ReaderModel | null>(null);
   const [model, setModel] = useState<ReaderModel | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
+  const [appearance, setAppearance] = useState(false);
+  const [position, setPosition] = useState<{ position: number; total: number } | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settling, setSettling] = useState(false);
@@ -63,8 +67,8 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     let loaded: ReaderModel | null = null;
     repository.getChapter(chapterId).then(async (chapter) => {
       if (!chapter) throw new Error('Chapter is not downloaded.');
-      const [locator, list, assetPath, images] = await Promise.all([repository.getLocator(chapterId),
-        repository.listChapters(chapter.storyId), repository.getChapterAssetPath(chapterId), repository.listChapterImages(chapterId)]);
+      const [locator, list, assetPath, images, location] = await Promise.all([repository.getLocator(chapterId),
+        repository.listChapters(chapter.storyId), repository.getChapterAssetPath(chapterId), repository.listChapterImages(chapterId), repository.getReaderPosition(chapterId)]);
       if (!active) return;
       const session = Crypto.randomUUID();
       const file = await renderFile(chapter, locator, preferencesRef.current, session, assetPath, undefined, images);
@@ -78,7 +82,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       loaded = { chapter, session, file, positions, readEnd };
       if (!active) { positions.dispose(); if (!retainRenderFiles) file.directory.delete(); return; }
       modelRef.current = loaded;
-      setChapters(list);
+      setChapters(list); setPosition(location);
       setModel(loaded);
       // Only an already accepted intent can be retried here; loading never requests Read.
       void readEnd?.flush().catch(readError);
@@ -208,10 +212,11 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
     const current = modelRef.current;
     if (!current || !ready || exiting.current) return;
     setReady(false);
+    const next = normalizePreferences(value);
     try {
-      await changePreferences(value);
+      await changePreferences(next);
       if (modelRef.current === current && !webFailed.current) {
-        web.current?.injectJavaScript(`window.StowawayReader && window.StowawayReader.restyle(${value.fontSize}, ${JSON.stringify(value.theme)}); true;`);
+        web.current?.injectJavaScript(`window.StowawayReader && window.StowawayReader.restyle(${next.fontSize}, ${JSON.stringify(next.theme)}, ${JSON.stringify(next.font)}); true;`);
       }
     } catch {
       setReady(true);
@@ -243,16 +248,17 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
   const index = chapters.findIndex((chapter) => chapter.id === chapterId);
   const previous = index >= 0 ? chapters[index - 1] : undefined;
   const next = index >= 0 ? chapters[index + 1] : undefined;
-  return <SafeAreaView style={styles.page}>
+  return <AppScreen><View testID="reader-content" style={{ flex: 1 }} pointerEvents={appearance ? 'none' : 'auto'}
+    accessibilityElementsHidden={appearance} importantForAccessibility={appearance ? 'no-hide-descendants' : 'auto'}>
     <Stack.Screen options={{ gestureEnabled: false }} />
-    <Text style={styles.title} numberOfLines={2} accessibilityRole="header">{model?.chapter.title ?? 'Reader'}</Text>
-    <ReaderControls preferences={preferences} disabled={!ready || settling} onChange={(value) => { void restyle(value); }} />
-    {error && <View style={styles.status}><Text accessibilityRole="alert">{error}</Text>
-      <Control label="Reopen local chapter" text="Retry" onPress={() => { void reopen(); }} /></View>}
-    {!ready && !error && <View style={styles.status}><ActivityIndicator /><Text>Restoring your passage…</Text></View>}
+    <ReaderTopBar title={model?.chapter.title ?? 'Reader'} disabled={settling} appearanceDisabled={!ready || settling}
+      onContents={() => { void go(null); }} onAppearance={() => setAppearance(true)} />
+    {error && <InlineBanner tone="error" message={error}>
+      <Button label="Reopen local chapter" text="Retry" disabled={settling} onPress={() => { void reopen(); }} /></InlineBanner>}
+    {!ready && !error && <LoadingState text="Restoring your passage…" />}
     {model && <WebView ref={web} source={{ uri: model.file.uri }}
       pointerEvents={settling ? 'none' : 'auto'}
-      style={[styles.reader, { opacity: ready ? 1 : 0, backgroundColor: preferences.theme === 'dark' ? '#15191e' : '#faf7f0' }]}
+      style={[styles.reader, { opacity: ready ? 1 : 0, backgroundColor: READER_PAPER[normalizePreferences(preferences).theme] }]}
       allowingReadAccessToURL={model.file.readAccess}
       // Route every navigation through our callback. Whitelists alone can launch external URLs.
       originWhitelist={['*']}
@@ -269,20 +275,12 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       allowsLinkPreview={false} dataDetectorTypes="none"
       automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"
       textZoom={100} />}
-    <View style={styles.navigation}>
-      <Control label="Previous chapter" text="Previous" disabled={!previous || !ready}
-        onPress={() => { if (previous) void go(previous.id); }} />
-      <Control label="Return to story contents" text="Contents" onPress={() => { void go(null); }} />
-      <Control label="Next chapter" text="Next" disabled={!next || !ready}
-        onPress={() => { if (next) void go(next.id); }} />
-    </View>
-  </SafeAreaView>;
+    <ReaderBottomBar position={model ? index < 0 ? 'Saved chapter' : position ? (position.position + 1) + ' of ' + position.total : '' : ''}
+      previousDisabled={!previous || !ready || settling} nextDisabled={!next || !ready || settling}
+      onPrevious={() => { if (previous) void go(previous.id); }} onNext={() => { if (next) void go(next.id); }} />
+    </View><AppearanceSheet visible={appearance} preferences={preferences} disabled={!ready || settling}
+      onChange={(value) => { void restyle(value); }} onClose={() => setAppearance(false)} />
+  </AppScreen>;
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#faf7f0' },
-  title: { fontSize: 18, fontWeight: '600', color: '#22252a', paddingHorizontal: 16, paddingTop: 8, textAlign: 'center' },
-  reader: { flex: 1 },
-  navigation: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, padding: 8 },
-  status: { padding: 10, gap: 8, alignItems: 'center' },
-});
+const styles = StyleSheet.create({ reader: { flex: 1 } });

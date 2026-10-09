@@ -2,7 +2,7 @@ import type { UpdateResult } from './import-story';
 
 export function describeUpdate(result: UpdateResult): string {
   const changes = result.reconciliation;
-  if (!changes) return 'Prior primary contents retained; no complete update committed.';
+  if (!changes) return 'Previous primary contents kept; no complete update committed.';
   const parts: string[] = [];
   if (changes.added) parts.push(`${changes.added} new ${changes.added === 1 ? 'chapter' : 'chapters'} listed`);
   if (changes.reactivated) parts.push(`${changes.reactivated} ${changes.reactivated === 1 ? 'chapter' : 'chapters'} listed again`);
@@ -11,7 +11,7 @@ export function describeUpdate(result: UpdateResult): string {
   if (changes.removed) parts.push('Removed entries retained; downloaded text remains saved');
   if (result.bodiesDownloaded) parts.push(`${result.bodiesDownloaded} ${result.bodiesDownloaded === 1 ? 'chapter' : 'chapters'} downloaded`);
   const pending = result.story ? result.story.total - result.story.downloaded : null;
-  if (pending) parts.push(`Complete manifest checked; ${pending} ${pending === 1 ? 'chapter' : 'chapters'} pending`);
-  if (!parts.length) return result.failure ? 'Complete manifest checked; committed text retained.' : 'Up to date.';
+  if (pending) parts.push(`Contents checked; ${pending} ${pending === 1 ? 'chapter' : 'chapters'} pending`);
+  if (!parts.length) return result.failure ? 'Contents checked; committed text retained.' : 'Up to date.';
   return `${parts.join('. ')}.`;
 }

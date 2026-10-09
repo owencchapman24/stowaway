@@ -103,7 +103,7 @@ test.each([0, 1, 2, 3, 4])('fresh/v%s -> latest retains fixture passage/settings
   expect(await host.db.getFirstAsync('PRAGMA user_version')).toEqual({ user_version: 6 });
   expect(await host.db.getAllAsync('SELECT * FROM reading_positions')).toEqual(old);
   expect((await states()).every((e) => (e as { is_read: number }).is_read === 0)).toBe(true);
-  if (version) { expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 24 }); expect(await repo.getAssetPath()).toBe(asset.relativePath); expect(await repo.listContents('fixture:thread:1001')).toHaveLength(3); }
+  if (version) { expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 24, font: 'georgia' }); expect(await repo.getAssetPath()).toBe(asset.relativePath); expect(await repo.listContents('fixture:thread:1001')).toHaveLength(3); }
 });
 test('S2A v1 keeps no manifest/read schema and uses its existing reader APIs only', async () => {
   host.close(); host = hostSqlite(join(folder, 's2a.db')); await migrate(host.db, 1); repo = createRepository(host.db);

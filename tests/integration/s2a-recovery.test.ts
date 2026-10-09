@@ -66,7 +66,7 @@ test.each(['before-write', 'after-html-write'] as const)('%s exception preserves
   const reopened = await diagnostic.reopen();
   expect(reopened.chapter).toEqual(baseline.chapter);
   expect(reopened.locator).toEqual(baseline.locator);
-  expect(await (await diagnostic.readerStorage()).getPreferences()).toEqual({ theme: 'light', fontSize: 26 });
+  expect(await (await diagnostic.readerStorage()).getPreferences()).toEqual({ theme: 'light', fontSize: 26, font: 'georgia' });
   await diagnostic.text('commit');
   await diagnostic.text('commit');
   const next = await diagnostic.reopen();
@@ -114,7 +114,7 @@ test('real open transaction checkpoint shows old committed state on another conn
     await expect(diagnostic.cleanupOrphans()).rejects.toThrow('active');
   } finally { diagnostic.finishCheckpoint(false); await result; await preferences; unsubscribe(); }
   expect((await diagnostic.reopen()).chapter).toEqual(baseline.chapter);
-  expect(await (await diagnostic.readerStorage()).getPreferences()).toEqual({ theme: 'light', fontSize: 30 });
+  expect(await (await diagnostic.readerStorage()).getPreferences()).toEqual({ theme: 'light', fontSize: 30, font: 'georgia' });
 });
 
 test('checkpoint can be explicitly committed; normal reopen retains new content without seeding', async () => {
@@ -230,7 +230,7 @@ test('accepted image and exact locator/preferences regenerate after deleting ren
   const baseline = await diagnostic.inspect();
   const repo = await diagnostic.readerStorage();
   const locator = { ...baseline.locator!, offset: 37, progression: 0.42 };
-  const prefs = { theme: 'light' as const, fontSize: 28 };
+  const prefs = { theme: 'light' as const, fontSize: 28, font: 'georgia' as const };
   await repo.saveLocator(locator); await repo.savePreferences(prefs);
   const content = createLocalContentFiles(deps.files, digest, async () => { throw new Error('Must not materialize bundle for render'); }, deps.uuid);
   const first = await content.render(baseline.chapter!, locator, prefs, deps.uuid(), baseline.reference!);
@@ -306,7 +306,7 @@ test('guard rejects normal DB/path, traversal and mismatched root before open/de
   expect(await diagnostic.inspect()).toMatchObject({ initialized: false });
   expect(await repo.getChapter(chapter.id)).toEqual(originalChapter);
   expect(await repo.getLocator(chapter.id)).toEqual(locator);
-  expect(await repo.getPreferences()).toEqual({ theme: 'light', fontSize: 30 });
+  expect(await repo.getPreferences()).toEqual({ theme: 'light', fontSize: 30, font: 'georgia' });
   expect(await repo.listChapters()).toHaveLength(3);
   expect(await normalFiles.read('assets/normal.png')).toEqual(await bundled());
   expect(Buffer.from(await normalFiles.read('reader/normal/index.html')).toString()).toBe('normal render');

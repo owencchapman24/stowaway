@@ -1,12 +1,14 @@
+import { useState } from 'react';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { AppState } from 'react-native';
+import { AppState, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import * as Crypto from 'expo-crypto';
+import WebView from 'react-native-webview';
 import StoryContents from '../../src/app/story';
 import Library from '../../src/app/index';
 import Reader from '../../src/app/reader';
@@ -18,9 +20,9 @@ import { createRepository } from '../../src/storage/repository';
 import { prepareContent } from '../../src/content/sanitize';
 import { updateNativeStory } from '../../src/importing/native';
 import { downloadNativeImages } from '../../src/images/native';
-import { Control } from '../../src/reader/controls';
+import { retainedPress } from '../ui-helpers';
 import { hostSqlite } from './host-sqlite';
-import type { Chapter, StoryMetadata } from '../../src/domain/types';
+import type { Chapter, Preferences, StoryMetadata } from '../../src/domain/types';
 import type { UpdateResult } from '../../src/importing/import-story';
 import type { ImageResult } from '../../src/images/download';
 
@@ -67,7 +69,7 @@ beforeEach(async () => {
   await repo.reconcileManifest(id, metadata, manifest(['101', '102', '103']), 1);
   chapter = (await repo.getChapter(`${id}:post:102`))!;
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: id, chapter: chapter.id });
-  jest.mocked(useStorage).mockReturnValue({ repository: repo, preferences: { theme: 'light', fontSize: 20 },
+  jest.mocked(useStorage).mockReturnValue({ repository: repo, appStyle: 'stowaway', changeAppStyle: jest.fn(), preferences: { theme: 'light', fontSize: 20 },
     changePreferences: jest.fn(), imageWarning: null });
   jest.mocked(createRenderFile).mockResolvedValue({ uri: 'file:///generated/index.html', readAccess: 'file:///generated/',
     directory: { exists: false, delete: jest.fn() } } as unknown as Awaited<ReturnType<typeof createRenderFile>>);
@@ -83,9 +85,9 @@ function send(type: string, extra = {}) {
   screen.getByTestId('reader-web').props.onMessage({ nativeEvent: { data: JSON.stringify({ type, session,
     chapterId: chapter.id, contentHash: chapter.contentHash, ...extra }) } });
 }
-async function readyReader() { render(<Reader />); await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy()); act(() => send('ready')); }
+async function readyReader() { const view = render(<Reader />); await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy()); act(() => send('ready')); return view; }
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { release, promise }; }
-function handler(label: string) { return screen.UNSAFE_getAllByType(Control).find((control) => control.props.label === label)!.props.onPress; }
+function handler(label: string) { return retainedPress(label); }
 function reopen(kind: 'retry' | 'termination') {
   if (kind === 'retry') fireEvent.press(screen.getByLabelText('Reopen local chapter'));
   else fireEvent(screen.getByTestId('reader-web'), 'contentProcessDidTerminate');
@@ -120,7 +122,9 @@ test.each(['Return to story contents', 'Next chapter', 'Previous chapter'])('una
   expect(router.replace).not.toHaveBeenCalled();
   expect(screen.getByLabelText('Reopen local chapter')).toBeEnabled();
   expect(screen.getByTestId('reader-web').props.pointerEvents).toBe('auto');
+  fireEvent.press(screen.getByLabelText('Reading appearance'));
   expect(screen.getByLabelText('Increase reading font size')).toBeEnabled();
+  fireEvent.press(screen.getByLabelText('Close reading appearance'));
   expect(commands.some((script) => script.includes('setInteractionEnabled(true)'))).toBe(true);
   expect(screen.UNSAFE_getByType(ChapterReader).props.readCompletion).toBe(owner);
   expect(await repo.getChapter(chapter.id)).not.toBeNull();
@@ -345,10 +349,11 @@ async function lateCompletionRecovery(kind: 'retry' | 'termination') {
 
 test('opening Library/Contents is local/read-only and shows current unread including pending, excluding saved', async () => {
   const write = jest.spyOn(repo, 'setEntryRead'); const automatic = jest.spyOn(repo, 'markChapterRead');
-  const library = render(<Library />); await waitFor(() => expect(screen.getByText('3 unread')).toBeTruthy());
-  expect(screen.getByText('2 / 3 text chapters downloaded')).toBeTruthy(); library.unmount();
-  render(<StoryContents />); await waitFor(() => expect(screen.getByText('3 unread')).toBeTruthy());
-  expect(screen.getAllByText('Unread')).toHaveLength(4); expect(screen.getByLabelText('Read Generated 103')).toBeDisabled();
+  const library = render(<Library />); await waitFor(() => expect(screen.getByText(/· 3 unread$/)).toBeTruthy());
+  expect(screen.getByText('2 of 3 downloaded · 3 unread')).toBeTruthy(); library.unmount();
+  render(<StoryContents />); await waitFor(() => expect(screen.getByText(/· 3 unread$/)).toBeTruthy());
+  expect(screen.getAllByText('○')).toHaveLength(4);
+  for (const row of screen.getAllByLabelText(/^Read Generated [0-9]+$/)) expect(row.props.accessibilityValue.text).toMatch(/Unread · (Downloaded|Not downloaded)$/); expect(screen.getByLabelText('Read Generated 103')).toBeDisabled();
   expect(screen.getByLabelText('Mark Generated 103 as read')).toBeEnabled(); expect(screen.getByLabelText('Mark Generated 104 as read')).toBeEnabled();
   expect(write).not.toHaveBeenCalled(); expect(automatic).not.toHaveBeenCalled(); expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();
 });
@@ -356,17 +361,17 @@ test.each(['101', '103', '104'])('manual %s correction updates authoritative SQL
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText(`Mark Generated ${post} as read`)).toBeEnabled());
   fireEvent.press(screen.getByLabelText(`Mark Generated ${post} as read`));
   await waitFor(() => expect(screen.getByLabelText(`Mark Generated ${post} as unread`)).toBeEnabled());
-  expect(screen.getByText(post === '104' ? '3 unread' : '2 unread')).toBeTruthy();
+  expect(screen.getByText(post === '104' ? /· 3 unread$/ : /· 2 unread$/)).toBeTruthy();
   expect(await host.db.getFirstAsync('SELECT is_read FROM threadmark_entries WHERE story_id = ? AND post_id = ?', id, post)).toEqual({ is_read: 1 });
   act(() => { mockBlur(); mockRefocus(); }); await waitFor(() => expect(screen.getByLabelText(`Mark Generated ${post} as unread`)).toBeEnabled());
   fireEvent.press(screen.getByLabelText(`Mark Generated ${post} as unread`)); await waitFor(() => expect(screen.getByLabelText(`Mark Generated ${post} as read`)).toBeEnabled());
-  expect(screen.getByText('3 unread')).toBeTruthy(); expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();
+  expect(screen.getByText(/· 3 unread$/)).toBeTruthy(); expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();
 });
 test('failed manual save retains previous SQL/screen state and permits retry', async () => {
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Mark Generated 101 as read')).toBeEnabled());
   host.failNextCommit(); fireEvent.press(screen.getByLabelText('Mark Generated 101 as read'));
   await waitFor(() => expect(screen.getByText(/Could not change Read\/Unread/)).toBeTruthy());
-  expect(screen.getByText('3 unread')).toBeTruthy(); expect((await repo.listContents(id))[0]?.isRead).toBe(false);
+  expect(screen.getByText(/· 3 unread$/)).toBeTruthy(); expect((await repo.listContents(id))[0]?.isRead).toBe(false);
   fireEvent.press(screen.getByLabelText('Mark Generated 101 as read')); await waitFor(() => expect(screen.getByLabelText('Mark Generated 101 as unread')).toBeEnabled());
 });
 test('manual write blocks source/reader exits and native removal through settlement/final refresh, including stale handlers', async () => {
@@ -381,7 +386,7 @@ test('manual write blocks source/reader exits and native removal through settlem
   expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(true);
   await act(async () => write.release()); expect(screen.getByLabelText('Mark Generated 101 as read')).toBeDisabled();
   await act(async () => refresh.release()); await waitFor(() => expect(screen.getByLabelText('Mark Generated 101 as unread')).toBeEnabled());
-  expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(false); expect(screen.getByText('2 unread')).toBeTruthy();
+  expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(false); expect(screen.getByText(/· 2 unread$/)).toBeTruthy();
 });
 test.each(['update', 'images'] as const)('%s operation blocks manual stale handlers until final authoritative refresh, then preserves Read state', async (kind) => {
   const work = gate(), refresh = gate(); await repo.setEntryRead(id, '101', true);
@@ -394,7 +399,7 @@ test.each(['update', 'images'] as const)('%s operation blocks manual stale handl
   act(() => stale()); expect((await repo.listContents(id))[0]?.isRead).toBe(true);
   await act(async () => work.release()); expect(screen.getByLabelText('Mark Generated 101 as unread')).toBeDisabled();
   await act(async () => refresh.release()); await waitFor(() => expect(screen.getByLabelText('Mark Generated 101 as unread')).toBeEnabled());
-  fireEvent.press(screen.getByLabelText('Mark Generated 101 as unread')); await waitFor(() => expect(screen.getByText('3 unread')).toBeTruthy());
+  fireEvent.press(screen.getByLabelText('Mark Generated 101 as unread')); await waitFor(() => expect(screen.getByText(/· 3 unread$/)).toBeTruthy());
 });
 test('late local read from another route cannot replace current Read state/actions', async () => {
   const gateRead = gate(), read = repo.listContents;
@@ -403,7 +408,7 @@ test('late local read from another route cannot replace current Read state/actio
   const other = { ...metadata, id: 'spacebattles:thread:9002', threadId: '9002', title: 'Generated other', sourceUrl: 'https://forums.spacebattles.com/threads/9002/' };
   await repo.commitInitialManifest(other, manifest(['201'])); await repo.setEntryRead(other.id, '201', true);
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: other.id }); view.rerender(<StoryContents />);
-  await waitFor(() => expect(screen.getByText('0 unread')).toBeTruthy()); await act(async () => gateRead.release());
+  await waitFor(() => expect(screen.getByText(/· All read$/)).toBeTruthy()); await act(async () => gateRead.release());
   expect(screen.queryByLabelText('Mark Generated 101 as read')).toBeNull(); expect(screen.getByLabelText('Mark Generated 201 as unread')).toBeEnabled();
 });
 test('delayed pre-correction refocus read cannot overwrite newer manual SQL/screen state; retained Mark Read is idempotent', async () => {
@@ -411,17 +416,23 @@ test('delayed pre-correction refocus read cannot overwrite newer manual SQL/scre
   const staleMarkRead = handler('Mark Generated 101 as read');
   const delayed = gate(), old = await repo.listContents(id);
   jest.spyOn(repo, 'listContents').mockImplementationOnce(async () => { await delayed.promise; return old; });
-  act(() => { mockBlur(); mockRefocus(); }); fireEvent.press(screen.getByLabelText('Mark Generated 101 as read'));
+  act(() => { mockBlur(); mockRefocus(); });
+  expect(screen.getByLabelText('Read Generated 101')).toBeDisabled();
+  fireEvent.press(screen.getByLabelText('Mark Generated 101 as read'));
   await waitFor(() => expect(screen.getByLabelText('Mark Generated 101 as unread')).toBeEnabled());
-  await act(async () => delayed.release()); expect(screen.getByText('2 unread')).toBeTruthy();
+  await act(async () => delayed.release()); expect(screen.getByText(/· 2 unread$/)).toBeTruthy();
   act(() => staleMarkRead()); await waitFor(() => expect(screen.getByLabelText('Mark Generated 101 as unread')).toBeEnabled());
   expect((await repo.listContents(id))[0]?.isRead).toBe(true);
 });
 test('retained manual action cannot mutate a pending entry hidden by a later COMPLETE removal', async () => {
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Mark Generated 103 as read')).toBeEnabled());
   const stale = handler('Mark Generated 103 as read'); await repo.reconcileManifest(id, metadata, manifest(['101', '102']), 2);
-  act(() => { mockBlur(); mockRefocus(); }); await waitFor(() => expect(screen.queryByLabelText('Mark Generated 103 as read')).toBeNull());
-  act(() => stale()); expect(await host.db.getFirstAsync('SELECT is_read FROM threadmark_entries WHERE story_id = ? AND post_id = ?', id, '103')).toEqual({ is_read: 0 });
+  // Settle the asynchronous focus refresh before polling for the removed row.
+  await act(async () => { mockBlur(); mockRefocus(); }); await waitFor(() => expect(screen.queryByLabelText('Mark Generated 103 as read')).toBeNull());
+  const changeRead = jest.spyOn(repo, 'setEntryRead');
+  await act(async () => { stale(); });
+  expect(changeRead).not.toHaveBeenCalled();
+  expect(await host.db.getFirstAsync('SELECT is_read FROM threadmark_entries WHERE story_id = ? AND post_id = ?', id, '103')).toEqual({ is_read: 0 });
 });
 test.each(['Next chapter', 'Previous chapter', 'Return to story contents'])('automatic Read survives immediate %s; neighboring entry and locator remain independent', async (label) => {
   await repo.commitDownloadedChapter(id, '103', await prepareContent('<p>Synthetic next.</p>', digest));
@@ -648,4 +659,116 @@ test('saved-unlisted completion remains local with both navigation directions di
   act(() => send('read-end')); fireEvent.press(screen.getByLabelText('Return to story contents'));
   await waitFor(() => expect(router.replace).toHaveBeenCalledWith({ pathname: '/story', params: { story: id } }));
   expect(await repo.listSavedUnlisted(id)).toMatchObject([{ postId: '104', isRead: true }]); expect(await repo.getStory(id)).toMatchObject({ unread: 3 });
+});
+
+test('UI appearance persists preferences through the existing restyle flow without saving a transient locator', async () => {
+  const locator = savedPassage(); await repo.saveLocator(locator);
+  const save = jest.spyOn(repo, 'saveLocator'), read = jest.spyOn(repo, 'markChapterRead');
+  jest.mocked(useStorage).mockImplementation(function useTestStorage() {
+    const [preferences, setPreferences] = useState<Preferences>({ theme: 'light', fontSize: 20 });
+    return { repository: repo, appStyle: 'stowaway', changeAppStyle: jest.fn(), preferences, imageWarning: null, changePreferences: async (value) => { await repo.savePreferences(value); setPreferences(value); } };
+  });
+  const commands: string[] = [];
+  mockInject = (script) => { commands.push(script); acknowledge(script); };
+  await readyReader();
+  expect(screen.getByText('2 of 3')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Reading appearance'));
+  expect(screen.getByRole('header', { name: 'Reading Appearance' })).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Increase reading font size'));
+  await waitFor(() => expect(screen.getByLabelText('Reading font size 22')).toBeTruthy());
+  expect(commands.some((command) => command.includes('restyle(22, "light", "georgia")'))).toBe(true);
+  expect(screen.getByLabelText('Increase reading font size')).toBeDisabled();
+  const ready = () => screen.getByTestId('reader-web', { includeHiddenElements: true }).props.onMessage({ nativeEvent: { data: JSON.stringify({
+    type: 'ready', session, chapterId: chapter.id, contentHash: chapter.contentHash,
+  }) } });
+  act(ready);
+  fireEvent.press(screen.getByLabelText('Use dark reading theme'));
+  await waitFor(() => expect(screen.getByLabelText('Use dark reading theme').props.accessibilityState.selected).toBe(true));
+  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 22, font: 'georgia' });
+  expect(commands.some((command) => command.includes('restyle(22, "dark", "georgia")'))).toBe(true);
+  act(ready);
+  fireEvent.press(screen.getByLabelText('Reading font'));
+  fireEvent.press(screen.getByLabelText('Use Palatino reading font'));
+  await waitFor(() => expect(screen.getByLabelText('Use Palatino reading font').props.accessibilityState.selected).toBe(true));
+  expect(commands.some((command) => command.includes('restyle(22, "dark", "palatino")'))).toBe(true);
+  expect(await repo.getPreferences()).toEqual({ theme: 'dark', fontSize: 22, font: 'palatino' });
+  expect(screen.getByLabelText('Use System Sans reading font')).toBeDisabled();
+  act(ready); fireEvent.press(screen.getByLabelText('Use Avenir Next reading font'));
+  await waitFor(() => expect(screen.getByLabelText('Use Avenir Next reading font').props.accessibilityState.selected).toBe(true));
+  expect(commands.some((command) => command.includes('restyle(22, "dark", "avenir-next")'))).toBe(true);
+  fireEvent.press(screen.getByLabelText('Close reading font'));
+  expect(screen.getByLabelText('Reading font')).toHaveAccessibilityValue({ text: 'Avenir Next' });
+  act(ready); fireEvent.press(screen.getByLabelText('Use paper reading theme'));
+  await waitFor(() => expect(screen.getByLabelText('Use paper reading theme').props.accessibilityState.selected).toBe(true));
+  expect(await repo.getPreferences()).toEqual({ theme: 'paper', fontSize: 22, font: 'avenir-next' });
+  expect(commands.some((command) => command.includes('restyle(22, "paper", "avenir-next")'))).toBe(true);
+  act(ready); fireEvent.press(screen.getByLabelText('Close reading appearance'));
+  expect(await repo.getLocator(chapter.id)).toEqual(locator);
+  expect(save).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText('Return to story contents'));
+  await waitFor(() => expect(router.replace).toHaveBeenCalled());
+  expect(commands.some((command) => command.includes('prepareForExit('))).toBe(true);
+  expect(await repo.getLocator(chapter.id)).toEqual(locator);
+});
+
+test('rapid font comparisons settle independently and backdrop dismissal preserves the committed choice and passage', async () => {
+  const locator = savedPassage(); await repo.saveLocator(locator);
+  await repo.savePreferences({ theme: 'paper', fontSize: 24, font: 'georgia' });
+  let initial = await repo.getPreferences();
+  const save = jest.spyOn(repo, 'saveLocator'), read = jest.spyOn(repo, 'markChapterRead'), preferenceSave = jest.spyOn(repo, 'savePreferences');
+  jest.mocked(useStorage).mockImplementation(function useTestStorage() {
+    const [preferences, setPreferences] = useState<Preferences>(initial);
+    return { repository: repo, appStyle: 'stowaway', changeAppStyle: jest.fn(), preferences, imageWarning: null,
+      changePreferences: async (value) => { await repo.savePreferences(value); setPreferences(value); } };
+  });
+  const commands: string[] = [];
+  mockInject = (script) => { commands.push(script); acknowledge(script); };
+  const view = await readyReader();
+  const readerSource = screen.UNSAFE_getByType(WebView).props.source;
+  expect(screen.getByTestId('reader-content').props.pointerEvents).toBe('auto');
+  const ready = () => screen.getByTestId('reader-web', { includeHiddenElements: true }).props.onMessage({ nativeEvent: { data: JSON.stringify({
+    type: 'ready', session, chapterId: chapter.id, contentHash: chapter.contentHash,
+  }) } });
+  fireEvent.press(screen.getByLabelText('Reading appearance')); fireEvent.press(screen.getByLabelText('Reading font'));
+  const hiddenReader = screen.getByTestId('reader-content', { includeHiddenElements: true });
+  expect(hiddenReader.props.pointerEvents).toBe('none');
+  expect(hiddenReader.props.accessibilityElementsHidden).toBe(true);
+  expect(hiddenReader.props.importantForAccessibility).toBe('no-hide-descendants');
+  for (const [index, name, key] of [[1, 'Avenir Next', 'avenir-next'], [2, 'Menlo', 'menlo'], [3, 'Marker Felt', 'marker-felt']] as const) {
+    fireEvent.press(screen.getByLabelText('Use ' + name + ' reading font'));
+    fireEvent.press(screen.getByLabelText('Use Papyrus reading font'));
+    expect(preferenceSave).toHaveBeenCalledTimes(index);
+    expect(screen.getByLabelText('Use Papyrus reading font')).toBeDisabled();
+    await waitFor(() => expect(screen.getByLabelText('Use ' + name + ' reading font').props.accessibilityState.selected).toBe(true));
+    expect(commands.some((command) => command.includes(`restyle(24, "paper", "${key}")`))).toBe(true);
+    expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy();
+    expect(screen.UNSAFE_getByType(WebView).props.source).toEqual(readerSource);
+    expect(createRenderFile).toHaveBeenCalledTimes(1);
+    if (index < 3) {
+      act(ready);
+      expect(StyleSheet.flatten(screen.UNSAFE_getByType(WebView).props.style)).toMatchObject({ opacity: 1 });
+      expect(screen.getByRole('header', { name: 'Reading Font' })).toBeTruthy();
+    }
+  }
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
+  expect(screen.getByLabelText('Reading font')).toHaveAccessibilityValue({ text: 'Marker Felt' });
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
+  expect(screen.queryByRole('header', { name: 'Reading Appearance' })).toBeNull();
+  expect(screen.getByTestId('reader-content').props.pointerEvents).toBe('auto');
+  expect(screen.getByTestId('reader-content').props.accessibilityElementsHidden).toBe(false);
+  act(ready);
+  initial = await repo.getPreferences(); expect(initial).toEqual({ theme: 'paper', fontSize: 24, font: 'marker-felt' });
+  expect(preferenceSave).toHaveBeenCalledTimes(3);
+  expect(save).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled();
+  expect(await repo.getLocator(chapter.id)).toEqual(locator);
+  view.unmount(); await readyReader();
+  fireEvent.press(screen.getByLabelText('Reading appearance'));
+  expect(screen.getByLabelText('Reading font')).toHaveAccessibilityValue({ text: 'Marker Felt' });
+  expect(screen.getByLabelText('Reading font size 24')).toBeTruthy();
+  expect(screen.getByLabelText('Use paper reading theme').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(screen.getByTestId('appearance-backdrop', { includeHiddenElements: true }));
+  fireEvent.press(screen.getByLabelText('Return to story contents'));
+  await waitFor(() => expect(router.replace).toHaveBeenCalled());
+  expect(commands.some((command) => command.includes('prepareForExit('))).toBe(true);
+  expect(await repo.getLocator(chapter.id)).toEqual(locator); expect(read).not.toHaveBeenCalled();
 });

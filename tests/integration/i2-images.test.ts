@@ -532,3 +532,38 @@ test.each(['missing', 'corrupt'])('rejected repair preserves a truly %s historic
   expect(next.relativePath).not.toBe(prior.file!.relativePath); expect(await imageFiles.read(next)).toEqual(jpeg());
   expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
 });
+
+test.each(['slot', 'final guard'] as const)('UI D3: cancellation during legacy discovery at %s stays cancelled and rolls back', async (point) => {
+  const chapter = await seed(markup(2), false), locator = await repo.getLocator(chapterId);
+  const controller = new AbortController(), transaction = host.db.withExclusiveTransactionAsync;
+  host.db.withExclusiveTransactionAsync = (work) => transaction((tx) => work({
+    ...tx,
+    runAsync: async (sql, ...args) => {
+      const result = await tx.runAsync(sql, ...args);
+      if (point === 'slot' && sql.includes('INSERT INTO chapter_images')) controller.abort();
+      return result;
+    },
+    getFirstAsync: async <T,>(sql: string, ...args: Parameters<typeof tx.getFirstAsync> extends [string, ...infer P] ? P : never) => {
+      const result = await tx.getFirstAsync<T>(sql, ...args);
+      if (point === 'final guard' && sql === 'PRAGMA foreign_key_check') controller.abort();
+      return result;
+    },
+  }));
+  const result = await run(source({ '101': markup(2) }), controller.signal);
+  expect(result.failure).toMatchObject({ code: 'cancelled' });
+  expect(await repo.listChapterImages(chapterId)).toEqual([]);
+  expect(await repo.getImageSummary(id)).toMatchObject({ unknown: 1, scanned: 0 });
+  expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
+  host.db.withExclusiveTransactionAsync = transaction;
+  expect((await run(source({ '101': markup(2) }))).failure).toBeNull();
+  expect(await repo.getImageSummary(id)).toMatchObject({ local: 2, pending: 0 });
+});
+
+test('UI D3: actual legacy discovery commit failure is still storage, with readable text and explicit retry', async () => {
+  const chapter = await seed(), locator = await repo.getLocator(chapterId);
+  host.failNextCommit();
+  expect((await run()).failure).toMatchObject({ code: 'storage' });
+  expect(await repo.listChapterImages(chapterId)).toEqual([]);
+  expect(await repo.getChapter(chapterId)).toEqual(chapter); expect(await repo.getLocator(chapterId)).toEqual(locator);
+  expect((await run()).failure).toBeNull();
+});

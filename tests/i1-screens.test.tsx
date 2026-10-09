@@ -1,12 +1,12 @@
 import { AppState, type AppStateStatus } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import StoryContents from '../src/app/story';
 import { useStorage } from '../src/storage/context';
 import { updateNativeStory } from '../src/importing/native';
 import { S1Failure } from '../src/sources/spacebattles/types';
-import { Control } from '../src/reader/controls';
+import { retainedPress } from './ui-helpers';
 import type { ImportProgress, UpdateResult } from '../src/importing/import-story';
 import type { StoryContentsEntry, StorySummary } from '../src/domain/types';
 import { downloadNativeImages } from '../src/images/native';
@@ -36,13 +36,14 @@ const story: StorySummary = { id: 'spacebattles:thread:9001', source: 'spacebatt
 const other = { ...story, id: 'spacebattles:thread:9002', threadId: '9002', title: 'Generated story B', sourceUrl: 'https://forums.spacebattles.com/threads/9002/' };
 const entry = (post: string, name: string, downloaded = true): StoryContentsEntry => ({ id: `${story.id}:post:${post}`,
   postId: post, title: name, position: 0, sourceUrl: story.sourceUrl + `#post-${post}`, downloaded, isRead: false });
-const repository = { getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn(), getImageSummary: jest.fn() };
+const repository = { getContinueReading: jest.fn(async () => null), getStory: jest.fn(), listContents: jest.fn(), listSavedUnlisted: jest.fn(), getImageSummary: jest.fn() };
 const run = jest.mocked(updateNativeStory);
 const imageRun = jest.mocked(downloadNativeImages);
 const unchanged: UpdateResult = { story, failure: null, bodiesDownloaded: 0, reconciliation: {
   added: 0, reactivated: 0, removed: 0, renamed: 0, orderChanged: false, metadataChanged: false, total: 2, downloaded: 2, pending: 0,
 } };
 function setup() {
+  repository.getContinueReading.mockResolvedValue(null);
   jest.mocked(useStorage).mockReturnValue({ repository } as unknown as ReturnType<typeof useStorage>);
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });
   repository.getStory.mockImplementation(async (id) => id === other.id ? other : story);
@@ -79,7 +80,8 @@ test('current primary and readable saved-unlisted content render as separate gro
   repository.listSavedUnlisted.mockResolvedValue([entry('101', 'Saved first')]);
   render(<StoryContents />);
   await waitFor(() => expect(screen.getByText('Saved chapters no longer listed')).toBeTruthy());
-  expect(screen.getByText('Primary Threadmarks')).toBeTruthy(); expect(screen.getByText('1. Current second')).toBeTruthy();
+  expect(screen.getByText('Chapters')).toBeTruthy(); expect(within(screen.getByLabelText('Read Current second')).getByText('Current second')).toBeTruthy();
+  expect(screen.getByLabelText('Read Current second').props.accessibilityValue.text).toMatch(/^Chapter 1\./);
   expect(screen.getByLabelText('Read Pending current')).toBeDisabled(); expect(screen.getByLabelText('Read Saved first')).toBeEnabled();
   fireEvent.press(screen.getByLabelText('Read Saved first'));
   expect(router.push).toHaveBeenCalledWith({ pathname: '/reader', params: { chapter: `${story.id}:post:101` } });
@@ -102,20 +104,20 @@ test('checking/reconciling/downloading progress is cancellable; cancelled update
   });
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Check for Updates')).toBeTruthy());
   fireEvent.press(screen.getByLabelText('Check for Updates'));
-  expect(screen.getByText('Checking complete primary manifest: 3 entries discovered')).toBeTruthy();
+  expect(screen.getByText('Reading primary Threadmarks · 3 found')).toBeTruthy();
   expect(screen.getByLabelText('Check for Updates')).toBeDisabled();
   act(() => progress({ phase: 'reconciling', storyId: story.id, downloaded: 2, total: 3 }));
-  expect(screen.getByText('Reconciling complete primary manifest')).toBeTruthy();
+  expect(screen.getByText('Saving story contents')).toBeTruthy();
   act(() => progress({ phase: 'downloading', storyId: story.id, downloaded: 2, total: 3, title: 'New current' }));
-  expect(screen.getByText('Downloading text: 2 / 3 · New current')).toBeTruthy();
+  expect(screen.getByText('2 of 3 chapters downloaded · New current')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('Cancel update')); expect(signal?.aborted).toBe(true);
   const pending = { ...story, total: 3, downloaded: 2, lastUpdateAttemptAt: 500, lastUpdateSuccessAt: 500 };
   repository.getStory.mockResolvedValue(pending);
   repository.listContents.mockResolvedValue([entry('101', 'Current first'), entry('104', 'New current', false)]);
   await act(async () => finish({ ...unchanged, story: pending, failure: new S1Failure('cancelled', 'Generated cancellation'),
     reconciliation: { ...unchanged.reconciliation!, added: 1, total: 3, downloaded: 2, pending: 1 } }));
-  expect(screen.getByText('2 / 3 text chapters downloaded')).toBeTruthy();
-  expect(screen.getByText(/Complete manifest checked; 1 chapter pending/)).toBeTruthy();
+  expect(screen.getByText('2 of 3 downloaded · 2 unread')).toBeTruthy();
+  expect(screen.getByText(/Contents checked; 1 chapter pending/)).toBeTruthy();
   expect(screen.getByLabelText('Read New current')).toBeDisabled(); expect(screen.getByLabelText('Resume Download')).toBeEnabled();
   fireEvent.press(screen.getByLabelText('Resume Download'));
   expect(router.push).toHaveBeenCalledWith({ pathname: '/add-story', params: { story: story.id } });
@@ -126,8 +128,8 @@ test.each(['blocked', 'parser', 'network', 'incomplete'] as const)('typed %s res
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Check for Updates')).toBeTruthy());
   fireEvent.press(screen.getByLabelText('Check for Updates'));
   await waitFor(() => expect(screen.getByText(`${code}: Generated failure`)).toBeTruthy());
-  expect(screen.getByText('Prior primary contents retained; no complete update committed.')).toBeTruthy();
-  expect(screen.getByLabelText('Read Current first')).toBeEnabled(); expect(screen.getByText('2 / 2 text chapters downloaded')).toBeTruthy();
+  expect(screen.getByText('Previous primary contents kept; no complete update committed.')).toBeTruthy();
+  expect(screen.getByLabelText('Read Current first')).toBeEnabled(); expect(screen.getByText('2 chapters · 2 unread')).toBeTruthy();
 });
 
 test('backgrounding/leaving aborts update; late progress/result cannot attach to another story', async () => {
@@ -166,12 +168,12 @@ test('blur/refocus while cancelled COMMIT finishes refreshes persistent counts w
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Check for Updates')).toBeTruthy());
   fireEvent.press(screen.getByLabelText('Check for Updates'));
   act(() => mockBlur()); expect(signal?.aborted).toBe(true); act(() => mockRefocus());
-  await waitFor(() => expect(screen.getByText('2 / 2 text chapters downloaded')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('2 chapters · 2 unread')).toBeTruthy());
   const pending = { ...story, total: 3, downloaded: 2, lastUpdateSuccessAt: 700 };
   repository.getStory.mockResolvedValue(pending);
   await act(async () => finish({ ...unchanged, story: pending, reconciliation: { ...unchanged.reconciliation!, added: 1 },
     failure: new S1Failure('cancelled', 'Old cancellation') }));
-  await waitFor(() => expect(screen.getByText('2 / 3 text chapters downloaded')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('2 of 3 downloaded · 2 unread')).toBeTruthy());
   expect(screen.getByLabelText('Resume Download')).toBeEnabled();
   expect(screen.queryByText(/Old cancellation/)).toBeNull(); expect(screen.queryByText('Up to date.')).toBeNull();
 });
@@ -183,7 +185,7 @@ test('Cancel and native/back guard remain active through a delayed final read; s
     finish = resolve; expect(options?.signal?.aborted).toBe(false);
   }));
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Resume Download')).toBeEnabled());
-  const handler = (label: string) => screen.UNSAFE_getAllByType(Control).find((control) => control.props.label === label)!.props.onPress;
+  const handler = (label: string) => retainedPress(label);
   const library = handler('Return to Library');
   const chapter = handler('Read Current first');
   const resume = handler('Resume Download');
@@ -250,7 +252,7 @@ test('I2 opening Story starts zero image traffic; deliberate Download Images ref
   expect(screen.getByText('Images: 2 text chapters not scanned')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('Download Images'));
   await waitFor(() => expect(screen.getByText('Images: 8 local · 2 omitted · 1 pending')).toBeTruthy());
-  expect(screen.getByText('2 / 2 text chapters downloaded')).toBeTruthy();
+  expect(screen.getByText('2 chapters · 2 unread')).toBeTruthy();
   expect(imageRun).toHaveBeenCalledWith(story.id, repository, expect.objectContaining({ signal: expect.anything() }));
   expect(screen.getByLabelText('Retry Images')).toBeEnabled(); expect(screen.getByLabelText('Read Current first')).toBeEnabled();
 });
@@ -272,7 +274,7 @@ test('I2 all-omitted MIME failures expose deliberate Retry Images and bounded de
   fireEvent.press(screen.getByLabelText('Retry Images'));
   await waitFor(() => expect(screen.getByText('Images: 8 local · 50 omitted · 0 pending')).toBeTruthy());
   expect(screen.getByText(/Image MIME \(dev\):.*slot 51.*received image\/jpg.*detected png.*validated/)).toBeTruthy();
-  expect(screen.getByText('2 / 2 text chapters downloaded')).toBeTruthy();
+  expect(screen.getByText('2 chapters · 2 unread')).toBeTruthy();
 });
 test('I2 MIME metadata is hidden outside development mode', async () => {
   const dev = __DEV__; Reflect.set(global, '__DEV__', false);
@@ -303,9 +305,9 @@ test('I2 Cancel, Read/Library/Resume/native removal guards persist through image
     return new Promise((resolve) => { finish = resolve; });
   });
   render(<StoryContents />); await waitFor(() => expect(screen.getByLabelText('Download Images')).toBeEnabled());
-  const handlers = ['Return to Library', 'Read Current first', 'Resume Download'].map((label) => screen.UNSAFE_getAllByType(Control).find((control) => control.props.label === label)!.props.onPress);
+  const handlers = ['Return to Library', 'Read Current first', 'Resume Download'].map((label) => retainedPress(label));
   fireEvent.press(screen.getByLabelText('Download Images'));
-  expect(screen.getByText('Images: 1 / 4 processed · Current first · slot 2')).toBeTruthy();
+  expect(screen.getByText('1 of 4 images processed · Current first')).toBeTruthy();
   for (const label of ['Read Current first', 'Return to Library', 'Resume Download', 'Check for Updates', 'Download Images']) expect(screen.getByLabelText(label)).toBeDisabled();
   act(() => handlers.forEach((handler) => handler())); expect(router.push).not.toHaveBeenCalled(); expect(router.replace).not.toHaveBeenCalled();
   fireEvent.press(screen.getByLabelText('Cancel images')); expect(signal?.aborted).toBe(true);
