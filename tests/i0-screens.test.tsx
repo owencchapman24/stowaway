@@ -7,6 +7,8 @@ import StoryContents from '../src/app/story';
 import Reader from '../src/app/reader';
 import { useStorage } from '../src/storage/context';
 import { importNativeStory } from '../src/importing/native';
+import { importStory } from '../src/importing/import-story';
+import { RequestClient } from '../src/sources/spacebattles/request';
 import { S1Failure } from '../src/sources/spacebattles/types';
 import type { ChapterReaderProps } from '../src/reader/ChapterReader';
 import type { StorySummary } from '../src/domain/types';
@@ -94,6 +96,22 @@ test('typed access failure and completed state are clear', async () => {
   fireEvent.press(screen.getByLabelText('Import story'));
   await waitFor(() => expect(screen.getByText('All primary text downloaded.')).toBeTruthy());
   expect(screen.queryByLabelText('Resume Download')).toBeNull();
+});
+
+test('production post-only input retains typed rejection, explains thread URLs and performs no request', async () => {
+  const dev = __DEV__; Reflect.set(global, '__DEV__', false);
+  const transport = jest.fn(async () => { throw new Error('Unexpected source request.'); });
+  const client = new RequestClient(transport);
+  run.mockImplementationOnce((value, repo) => importStory(value, repo, client, async () => 'unused'));
+  try {
+    render(<AddStory />);
+    fireEvent.changeText(screen.getByLabelText('Public SpaceBattles thread URL'), 'https://forums.spacebattles.com/posts/101/');
+    fireEvent.press(screen.getByLabelText('Import story'));
+    await waitFor(() => expect(within(screen.getByRole('alert')).getByText('This URL or saved story identity is not supported. Use a public SpaceBattles thread URL, not a post-only link.')).toBeTruthy());
+    expect((await run.mock.results[0]!.value).failure?.code).toBe('unsupported-url');
+    expect(transport).not.toHaveBeenCalled(); expect(repository.getStory).not.toHaveBeenCalled();
+    expect(screen.queryByText(/unsupported-url:/)).toBeNull();
+  } finally { Reflect.set(global, '__DEV__', dev); }
 });
 
 test('resume screen reads stored state without fetching; leaving/backgrounding cancels active work', async () => {

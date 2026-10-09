@@ -49,10 +49,19 @@ export function StorageProvider({ children }: { children: ReactNode }) {
       }
       setAppStyle(value);
     }, changePreferences: async (value) => {
-    const next = normalizePreferences(value);
-    await storage.repository.savePreferences(next);
-    setPreferences(next);
-  } }}>{children}</Context.Provider></AppStyleContext.Provider>;
+      const next = normalizePreferences(value);
+      try { await storage.repository.savePreferences(next); }
+      catch (error) {
+        // Rejection alone cannot distinguish rollback from COMMIT-then-reject.
+        // Resolve only after readback confirms every requested reading setting,
+        // so the caller can apply its existing restyle without losing the gate.
+        const saved = await storage.repository.getPreferences();
+        setPreferences(saved);
+        if (saved.font !== next.font || saved.fontSize !== next.fontSize || saved.theme !== next.theme) throw error;
+        return;
+      }
+      setPreferences(next);
+    } }}>{children}</Context.Provider></AppStyleContext.Provider>;
 }
 
 export function useStorage(): StorageContext {

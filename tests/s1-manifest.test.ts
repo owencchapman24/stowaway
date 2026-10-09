@@ -1,5 +1,7 @@
-import { discoverManifest, runDiagnostic } from '../src/sources/spacebattles/diagnostic';
+import { URL as NodeURL } from 'node:url';
+import { discoverManifest, MAX_MANIFEST_DOCUMENTS, MAX_MANIFEST_NO_PROGRESS, runDiagnostic } from '../src/sources/spacebattles/diagnostic';
 import { parseIndex, samplePost } from '../src/sources/spacebattles/parse';
+import * as manifestParser from '../src/sources/spacebattles/parse';
 import { RequestClient, type Clock, type TransportResponse } from '../src/sources/spacebattles/request';
 import { threadFromUrl } from '../src/sources/spacebattles/url';
 import { S1Failure, type Document } from '../src/sources/spacebattles/types';
@@ -135,6 +137,169 @@ test('expected unique count mismatch is incomplete, never complete', async () =>
   expect(result.state).toBe('INCOMPLETE');
   if (result.state !== 'COMPLETE') expect(result.failure.code).toBe('incomplete');
 });
+function paginatedSource(total: number, posts: (number: number) => string) {
+  return jest.fn(async (url: string) => {
+    const number = Number(new URL(url).searchParams.get('page') ?? 1);
+    return doc(url, index(posts(number), number < total
+      ? { next: `${indexUrl}?page=${number + 1}`, last: `${indexUrl}?page=${total}` } : {}));
+  });
+}
+
+async function nativeUrlStress(work: () => Promise<void>) {
+  // Use Node's WHATWG implementation only for the large generated stress cases;
+  // keep the actual parser, continuation checks and production limits unchanged.
+  const previous = globalThis.URL;
+  globalThis.URL = NodeURL as unknown as typeof URL;
+  try { await work(); } finally { globalThis.URL = previous; }
+}
+
+async function logicalDocumentStress(total: number, ranges: boolean, work: () => Promise<void>) {
+  // Ceiling accounting consumes known parsed models at the real limit; parser
+  // behavior is exercised separately by the 1,250-page and range fixtures.
+  const entry = (number: number) => {
+    const postId = String(10000 + Math.ceil(number / 4));
+    return { postId, chapterId: `${thread.storyId}:post:${postId}`, threadmarkId: postId, title: 'Generated', url: `${threadUrl}#post-${postId}` };
+  };
+  const rangeAt = (number: number) => rangeUrl.replace('min=1', `min=${number}`).replace('max=8', `max=${total + 1}`);
+  const indexParser = jest.spyOn(manifestParser, 'parseIndex').mockImplementation((response) => {
+    const number = Number(new URL(response.url).searchParams.get('page') ?? 1);
+    return { category: { id: '9', url: indexUrl, expected: null }, items: [entry(number),
+      ...ranges ? [{ kind: 'range' as const, url: rangeAt(number) }, ...number === total ? [{ kind: 'range' as const, url: rangeAt(total + 1) }] : []] : []],
+    next: number < total ? `${indexUrl}?page=${number + 1}` : null, lastPage: total };
+  });
+  const rangeParser = jest.spyOn(manifestParser, 'parseRange').mockImplementation((response) => [entry(Number(new URL(response.url).searchParams.get('min')))]);
+  try { await nativeUrlStress(work); } finally { indexParser.mockRestore(); rangeParser.mockRestore(); }
+}
+
+test('a legitimate 1,250-page manifest keeps source order and completes below the defensive ceiling', () => nativeUrlStress(async () => {
+  const get = paginatedSource(1250, (number) => row(String(10000 + number * 2)) + row(String(10001 + number * 2)));
+  const result = await discoverManifest(thread, get, root);
+  expect(result.state).toBe('COMPLETE'); expect(result.pages).toBe(1250);
+  expect(result.entries.map((entry) => entry.postId)).toEqual(Array.from({ length: 2500 }, (_, i) => String(10002 + i)));
+  expect(get).toHaveBeenCalledTimes(1250);
+}));
+
+test.each([0, 1])('actual document ceiling allows a complete boundary but refuses %s additional continuation', (extra) => logicalDocumentStress(MAX_MANIFEST_DOCUMENTS + extra, false, async () => {
+  // Every fourth document advances stable identity: well within the existing
+  // 10,000-entry cap, and never near the separate no-progress threshold.
+  const get = paginatedSource(MAX_MANIFEST_DOCUMENTS + extra, (number) => row(String(10000 + Math.ceil(number / 4))));
+  const result = await discoverManifest(thread, get, root);
+  expect(result.pages).toBe(MAX_MANIFEST_DOCUMENTS);
+  expect(get).toHaveBeenCalledTimes(MAX_MANIFEST_DOCUMENTS);
+  expect(result.entries).toHaveLength(MAX_MANIFEST_DOCUMENTS / 4);
+  expect(result.state).toBe(extra ? 'INCOMPLETE' : 'COMPLETE');
+  if (result.state !== 'COMPLETE') {
+    expect(result.failure.code).toBe('incomplete'); expect(result.failure.message).toMatch(/document limit/);
+  }
+  expect(get.mock.calls.at(-1)?.[0]).toBe(`${indexUrl}?page=${MAX_MANIFEST_DOCUMENTS}`);
+}));
+
+test.each([false, true])('repeated post IDs stop after the exact no-progress allowance even if terminal=%s', async (terminal) => {
+  const total = 1 + MAX_MANIFEST_NO_PROGRESS + (terminal ? 0 : 100);
+  const get = paginatedSource(total, () => row('91'));
+  const result = await discoverManifest(thread, get, root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure).toMatchObject({ code: 'incomplete', message: expect.stringMatching(/no new post progress/) });
+  expect(result.pages).toBe(1 + MAX_MANIFEST_NO_PROGRESS);
+  expect(get).toHaveBeenCalledTimes(1 + MAX_MANIFEST_NO_PROGRESS);
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91']);
+});
+
+test('index and range documents share the overall ceiling, including an unresolved final range', () => logicalDocumentStress(MAX_MANIFEST_DOCUMENTS / 2, true, async () => {
+  const last = MAX_MANIFEST_DOCUMENTS / 2;
+  const rangeAt = (number: number) => rangeUrl.replace('min=1', `min=${number}`).replace('max=8', `max=${last + 1}`);
+  const get = jest.fn(async (url: string) => {
+    if (url.includes('threadmarks-load-range')) {
+      const number = Number(new URL(url).searchParams.get('min'));
+      return doc(url, row(String(10000 + Math.ceil(number / 4))));
+    }
+    const number = Number(new URL(url).searchParams.get('page') ?? 1);
+    return doc(url, index(row(String(10000 + Math.ceil(number / 4))) + range(rangeAt(number)) +
+      (number === last ? range(rangeAt(last + 1)) : ''), number < last ? { next: `${indexUrl}?page=${number + 1}` } : {}));
+  });
+  const result = await discoverManifest(thread, get, root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.message).toMatch(/document limit/);
+  expect(result.pages).toBe(MAX_MANIFEST_DOCUMENTS); expect(get).toHaveBeenCalledTimes(MAX_MANIFEST_DOCUMENTS);
+  expect(get.mock.calls.at(-1)?.[0]).toBe(rangeAt(last));
+  expect(result.entries).toHaveLength(last / 4);
+}));
+
+test('slug/query/numeric canonicalization cannot disguise advancing pages with repeated semantic content', async () => {
+  const get = jest.fn(async (url: string) => {
+    const number = Number(new URL(url).searchParams.get('page') ?? 1);
+    const returned = `${threadUrl.replace('synthetic.', `renamed-${number}.`)}threadmarks/?threadmark_category=9&page=0${number}`;
+    const next = `${threadUrl.replace('synthetic.', `next-${number}.`)}threadmarks?page=${number + 1}&threadmark_category=9`;
+    return doc(returned, index(row('91'), { next, last: next }));
+  });
+  const result = await discoverManifest(thread, get, root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.message).toMatch(/no new post progress/);
+  expect(get).toHaveBeenCalledTimes(1 + MAX_MANIFEST_NO_PROGRESS);
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91']);
+});
+
+test('duplicates plus a new post reset a nearly exhausted no-progress streak and retain first source order', async () => {
+  const total = MAX_MANIFEST_NO_PROGRESS * 2;
+  const get = paginatedSource(total, (number) => row('91') + (number >= MAX_MANIFEST_NO_PROGRESS + 1 ? row('92') : ''));
+  const result = await discoverManifest(thread, get, root);
+  expect(result.state).toBe('COMPLETE'); expect(result.pages).toBe(total);
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91', '92']);
+  expect(result.duplicates).toHaveLength(total * 2 - MAX_MANIFEST_NO_PROGRESS - 2);
+});
+
+test.each(['bounds', 'aliases'] as const)('range %s cannot evade the semantic no-progress guard or authorize terminal completion', async (kind) => {
+  const urls = Array.from({ length: MAX_MANIFEST_NO_PROGRESS + 1 }, (_, i) => kind === 'bounds'
+    ? rangeUrl.replace('min=1', `min=${i + 1}`).replace('max=8', `max=${i + 100}`)
+    : rangeUrl.replace('synthetic.', `renamed-${i}.`));
+  const get = jest.fn(async (url: string) => doc(url, url === indexUrl
+    ? index(row('91') + urls.map((value) => range(value)).join(''), { expected: 1 }) : row('91')));
+  const result = await discoverManifest(thread, get, root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.message).toMatch(/no new post progress/);
+  expect(result.pages).toBe(1 + MAX_MANIFEST_NO_PROGRESS);
+  expect(get.mock.calls.map(([url]) => url)).toEqual([indexUrl, ...urls.slice(0, MAX_MANIFEST_NO_PROGRESS)]);
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91']);
+});
+
+test('new direct and descendant posts reset range progress; range-only wrappers remain valid', async () => {
+  const bounds = rangeUrl.replace('max=8', 'max=100');
+  const urls = Array.from({ length: MAX_MANIFEST_NO_PROGRESS - 1 }, (_, i) => bounds.replace('min=1', `min=${i + 1}`));
+  const get = jest.fn(async (url: string) => {
+    if (url.includes('threadmarks-load-range')) return doc(url, row('91'));
+    const number = Number(new URL(url).searchParams.get('page') ?? 1);
+    return doc(url, number <= MAX_MANIFEST_NO_PROGRESS
+      ? index(row('91'), { next: `${indexUrl}?page=${number + 1}` })
+      : index(row('92') + urls.map((value) => range(value)).join('')));
+  });
+  expect((await discoverManifest(thread, get, root)).state).toBe('COMPLETE');
+  const nested = jest.fn(async (url: string) => {
+    if (url === indexUrl) return doc(url, index(range(bounds)));
+    const depth = Number(new URL(url).searchParams.get('min'));
+    return doc(url, depth < 20 ? range(bounds.replace('min=1', `min=${depth + 1}`)) : row('93'));
+  });
+  const result = await discoverManifest(thread, nested, root);
+  expect(result.state).toBe('COMPLETE'); expect(result.pages).toBe(21);
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['93']);
+});
+
+test.each([false, true])('productive range ancestors cannot erase trailing duplicate progress when terminal=%s', async (terminal) => {
+  const at = (number: number) => rangeUrl.replace('min=1', `min=${number}`).replace('max=8', 'max=1000');
+  const next = `${indexUrl}?page=2`;
+  const innerDuplicates = Array.from({ length: MAX_MANIFEST_NO_PROGRESS - 1 }, (_, i) => at(100 + i));
+  const outerDuplicates = Array.from({ length: MAX_MANIFEST_NO_PROGRESS - 1 }, (_, i) => at(200 + i));
+  const get = jest.fn(async (url: string) => doc(url, url === indexUrl ? index(range(at(1)), { expected: terminal ? 1 : 2, ...terminal ? {} : { next } })
+    : url === at(1) ? range(at(2)) + outerDuplicates.map((value) => range(value)).join('')
+      : url === at(2) ? range(at(3)) + innerDuplicates.map((value) => range(value)).join('')
+        : url === next ? index(row('92'), { expected: 2 }) : row('91')));
+  const result = await discoverManifest(thread, get, root);
+  expect(result.state).toBe('INCOMPLETE');
+  if (result.state !== 'COMPLETE') expect(result.failure.message).toMatch(/no new post progress/);
+  expect(result.pages).toBe(4 + MAX_MANIFEST_NO_PROGRESS);
+  expect(get.mock.calls.map(([url]) => url)).toEqual([indexUrl, at(1), at(2), at(3), ...innerDuplicates, outerDuplicates[0]]);
+  expect(result.entries.map((entry) => entry.postId)).toEqual(['91']);
+});
+
 test('advertised missing pagination and interrupted second page cannot mean complete', async () => {
   const next = `${indexUrl}?page=2`;
   const missing = await discoverManifest(thread, source({ [indexUrl]: index(row('91'), { last: next }) }), root);

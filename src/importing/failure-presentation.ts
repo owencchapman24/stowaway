@@ -10,7 +10,7 @@ export function failureContext(failure: S1Failure | ImportFailure): string {
     case 'network': case 'transient': return 'Network request failed. Earlier local commits are retained; retry deliberately when access is available.';
     case 'storage': return 'Local storage failed. Earlier successful commits are retained; check local storage and retry.';
     case 'busy': return 'Another story operation is settling. Wait for it to finish and retry.';
-    case 'unsupported-url': return 'This source URL or stored story identity is not supported.';
+    case 'unsupported-url': return 'This URL or saved story identity is not supported. Use a public SpaceBattles thread URL, not a post-only link.';
     case 'cancelled': return 'Stopped at your request. Completed local commits are retained.';
   }
 }

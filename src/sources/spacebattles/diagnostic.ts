@@ -5,6 +5,12 @@ import { S1Failure, type Category, type Diagnostic, type Document, type Entry, t
 
 const active = new WeakSet<RequestClient>();
 
+// Stowaway limits, not source quotas: twice the existing 10,000-entry budget
+// permits one index plus one range document per supported entry. Transport
+// retries/redirect hops remain separately bounded by RequestClient.
+export const MAX_MANIFEST_DOCUMENTS = 20_000;
+export const MAX_MANIFEST_NO_PROGRESS = 32;
+
 export async function discoverManifest(thread: Thread, get: (url: string) => Promise<Document>, root: Document,
   onProgress?: (count: number, category: Category) => void): Promise<Manifest> {
   const entries: Entry[] = [];
@@ -13,27 +19,40 @@ export async function discoverManifest(thread: Thread, get: (url: string) => Pro
   const visited = new Set<string>();
   let category: Category | null = null;
   let pages = 0;
+  let noProgress = 0;
   let incompleteContinuation = false;
   function verifyContinuation(requested: string, returned: string, kind: 'index' | 'range', primary?: string) {
     try { assertManifestContinuation(requested, returned, thread.threadId, kind, primary); }
     catch (error) { incompleteContinuation = true; throw error; }
   }
+  async function consume(url: string): Promise<Document> {
+    if (pages >= MAX_MANIFEST_DOCUMENTS) throw new S1Failure('incomplete', 'Manifest traversal document limit reached.');
+    const page = await get(url);
+    pages++;
+    return page;
+  }
   async function expand(items: (Entry | Range)[], depth = 0): Promise<void> {
     if (depth > 20) throw new S1Failure('incomplete', 'Range nesting exceeds the spike budget.');
+    const before = ids.size;
     for (const item of items) {
       if ('kind' in item) {
         if (visited.has(item.url)) throw new S1Failure('incomplete', 'Range continuation repeats or cycles.');
         visited.add(item.url);
-        const response = await get(item.url);
-        pages++;
+        const response = await consume(item.url);
         verifyContinuation(item.url, response.url, 'range', category!.id);
         await expand(parseRange(response, thread, category!.id), depth + 1);
       } else if (ids.has(item.postId)) duplicates.push(item.postId);
       else {
         ids.add(item.postId); entries.push(item);
+        noProgress = 0;
         if (entries.length > 10000) throw new S1Failure('incomplete', 'Manifest exceeds 10,000 unique entries.');
       }
     }
+    // Count resolved index/range documents, including terminal responses.
+    // Productive wrappers do not count again or erase a later duplicate streak
+    // on unwind. Only adding a new post ID above resets the counter.
+    if (ids.size === before) noProgress++;
+    if (noProgress >= MAX_MANIFEST_NO_PROGRESS) throw new S1Failure('incomplete', 'Manifest traversal made no new post progress.');
     if (category) onProgress?.(entries.length, category);
   }
   try {
@@ -43,8 +62,7 @@ export async function discoverManifest(thread: Thread, get: (url: string) => Pro
     while (url) {
       if (visited.has(url)) throw new S1Failure('incomplete', 'Pagination repeats or cycles.');
       visited.add(url);
-      const page = await get(url);
-      pages++;
+      const page = await consume(url);
       verifyContinuation(url, page.url, 'index', category?.id);
       if (visited.has(page.url) && page.url !== url) throw new S1Failure('incomplete', 'Source redirects to an already traversed page.');
       visited.add(page.url);

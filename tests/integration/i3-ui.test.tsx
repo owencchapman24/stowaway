@@ -14,6 +14,7 @@ import Library from '../../src/app/index';
 import Reader from '../../src/app/reader';
 import { ChapterReader } from '../../src/reader/ChapterReader';
 import { useStorage } from '../../src/storage/context';
+import { openStorage } from '../../src/storage/native';
 import { createRenderFile } from '../../src/storage/files';
 import { migrate } from '../../src/storage/migrations';
 import { createRepository } from '../../src/storage/repository';
@@ -38,6 +39,7 @@ jest.mock('expo-router', () => {
 });
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('../../src/storage/context', () => ({ useStorage: jest.fn() }));
+jest.mock('../../src/storage/native', () => ({ openStorage: jest.fn() }));
 jest.mock('../../src/importing/native', () => ({ updateNativeStory: jest.fn() }));
 jest.mock('../../src/images/native', () => ({ downloadNativeImages: jest.fn() }));
 jest.mock('../../src/storage/files', () => ({ createRenderFile: jest.fn() }));
@@ -771,4 +773,40 @@ test('rapid font comparisons settle independently and backdrop dismissal preserv
   await waitFor(() => expect(router.replace).toHaveBeenCalled());
   expect(commands.some((command) => command.includes('prepareForExit('))).toBe(true);
   expect(await repo.getLocator(chapter.id)).toEqual(locator); expect(read).not.toHaveBeenCalled();
+});
+
+test.each(['committed', 'rolled-back', 'unreadable'] as const)('production reader/provider settles a rejected preference write using %s readback', async (outcome) => {
+  const { StorageProvider, useStorage: useRealStorage } = jest.requireActual<typeof import('../../src/storage/context')>('../../src/storage/context');
+  jest.mocked(openStorage).mockResolvedValue({ repository: repo, imageWarning: null });
+  jest.mocked(useStorage).mockImplementation(useRealStorage);
+  await repo.savePreferences({ font: 'palatino', fontSize: 26, theme: 'paper' });
+  const locator = savedPassage(); await repo.saveLocator(locator);
+  const save = jest.spyOn(repo, 'saveLocator'), read = jest.spyOn(repo, 'markChapterRead');
+  const commands: string[] = []; mockInject = (script) => { commands.push(script); acknowledge(script); };
+  render(<StorageProvider><Reader /></StorageProvider>);
+  await waitFor(() => expect(screen.getByTestId('reader-web')).toBeTruthy()); act(() => send('ready'));
+  if (outcome === 'rolled-back') host.failNextCommit();
+  else {
+    const transaction = host.db.withExclusiveTransactionAsync.bind(host.db);
+    jest.spyOn(host.db, 'withExclusiveTransactionAsync').mockImplementationOnce(async (work) => {
+      await transaction(work); throw new Error('Driver rejected after COMMIT.');
+    });
+  }
+  if (outcome === 'unreadable') jest.spyOn(repo, 'getPreferences').mockRejectedValueOnce(new Error('Read unavailable.'));
+  fireEvent.press(screen.getByLabelText('Reading appearance')); fireEvent.press(screen.getByLabelText('Reading font'));
+  fireEvent.press(screen.getByLabelText('Use Menlo reading font'));
+  expect(screen.getByLabelText('Use Georgia reading font')).toBeDisabled();
+  if (outcome === 'committed') {
+    await waitFor(() => expect(commands.some((script) => script.includes('restyle(26, "paper", "menlo")'))).toBe(true));
+    expect(screen.getByLabelText('Use Menlo reading font').props.accessibilityState.selected).toBe(true);
+    expect(screen.queryByText('Could not confirm reading settings. Please retry or reopen Stowaway.', { includeHiddenElements: true })).toBeNull();
+  } else {
+    await waitFor(() => expect(screen.getByText('Could not confirm reading settings. Please retry or reopen Stowaway.', { includeHiddenElements: true })).toBeTruthy());
+    expect(screen.getByLabelText('Use Palatino reading font').props.accessibilityState.selected).toBe(true);
+    expect(commands.some((script) => script.includes('.restyle('))).toBe(false);
+    expect(screen.getByLabelText('Use Georgia reading font')).toBeEnabled();
+  }
+  expect(await repo.getPreferences()).toEqual({ font: outcome === 'rolled-back' ? 'palatino' : 'menlo', fontSize: 26, theme: 'paper' });
+  expect(createRenderFile).toHaveBeenCalledTimes(1);
+  expect(save).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled(); expect(await repo.getLocator(chapter.id)).toEqual(locator);
 });

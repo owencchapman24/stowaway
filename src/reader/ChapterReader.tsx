@@ -220,7 +220,7 @@ export function ChapterReader({ chapterId, repository, preferences, changePrefer
       }
     } catch {
       setReady(true);
-      setError('Could not save reading settings. Please retry.');
+      setError('Could not confirm reading settings. Please retry or reopen Stowaway.');
     }
   }
 

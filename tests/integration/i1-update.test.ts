@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { URL as NodeURL } from 'node:url';
 import { hostSqlite } from './host-sqlite';
 import { migrate } from '../../src/storage/migrations';
 import { createRepository, compileFixture } from '../../src/storage/repository';
 import { importStory, updateStory } from '../../src/importing/import-story';
 import { prepareContent } from '../../src/content/sanitize';
 import { RequestClient, type Transport } from '../../src/sources/spacebattles/request';
+import { MAX_MANIFEST_DOCUMENTS, MAX_MANIFEST_NO_PROGRESS } from '../../src/sources/spacebattles/diagnostic';
+import * as manifestParser from '../../src/sources/spacebattles/parse';
 import type { SqlValue } from '../../src/storage/database';
 import type { StoryMetadata } from '../../src/domain/types';
 import { bodyArticle, importRootUrl, storyHeader } from '../fixtures/import';
@@ -102,6 +105,50 @@ test.each(['downloaded', 'pending', 'unavailable shell'] as const)('hardening: r
   expect(await repo.getStory(id)).toMatchObject({ lastUpdateAttemptAt: 200, lastUpdateSuccessAt: 100 });
   expect(requests).toEqual([importRootUrl, indexUrl, second, third]);
 });
+
+async function nativeUrlStress(work: () => Promise<void>, enabled: boolean) {
+  // At the actual 20,000-document boundary supply known parsed index models;
+  // real RequestClient/continuity/SQLite remain. Ordinary/no-progress cases use
+  // the real parser and unchanged Jest/Expo URL environment.
+  const previous = globalThis.URL;
+  if (enabled) globalThis.URL = NodeURL as unknown as typeof URL;
+  const parser = enabled ? jest.spyOn(manifestParser, 'parseIndex').mockImplementation((response) => {
+    const number = Number(new URL(response.url).searchParams.get('page') ?? 1);
+    const postId = String(103 + Math.floor((number - 1) / 4));
+    return { category: { id: '9', url: indexUrl, expected: null }, items: [{ postId, chapterId: `${id}:post:${postId}`,
+      threadmarkId: postId, title: title(postId), url: `${threadUrl}#post-${postId}` }],
+    next: `${indexUrl}?page=${number + 1}`, lastPage: MAX_MANIFEST_DOCUMENTS + 1 };
+  }) : null;
+  try { await work(); } finally { parser?.mockRestore(); globalThis.URL = previous; }
+}
+
+test.each(['no-progress', 'document-limit', 'cancelled'] as const)('pre-S2B %s traversal preserves authoritative I1 state and last success', (reason) => nativeUrlStress(async () => {
+  await initial(); await repo.setEntryRead(id, '102', true);
+  await repo.reconcileManifest(id, metadata, manifest(['101', '102', '103']), 100);
+  const before = await state(), abort = new AbortController();
+  const total = reason === 'document-limit' ? MAX_MANIFEST_DOCUMENTS + 1 : MAX_MANIFEST_NO_PROGRESS + 1;
+  const requests: string[] = []; let time = 0;
+  const client = new RequestClient(async (url) => {
+    requests.push(url);
+    const number = Number(new URL(url).searchParams.get('page') ?? 1);
+    const html = url === importRootUrl ? page(storyHeader + tabs) : index(
+      row(String(103 + (reason === 'document-limit' ? Math.floor((number - 1) / 4) : 0))),
+      number < total ? { next: `${indexUrl}?page=${number + 1}`, last: `${indexUrl}?page=${total}` } : {});
+    if (url !== importRootUrl && reason === 'cancelled' && number === MAX_MANIFEST_NO_PROGRESS) abort.abort();
+    return { url, status: 200, bodyUsed: true, headers: { get: () => null }, text: async () => html };
+  }, { now: () => time, sleep: async (ms) => { time += ms; } });
+  const result = await updateStory(metadata, repo, client, digest, { now: () => 200, signal: abort.signal });
+  expect(result.failure?.code).toBe(reason === 'cancelled' ? 'cancelled' : 'incomplete');
+  if (reason !== 'cancelled') expect(result.failure?.message).toMatch(reason === 'document-limit' ? /document limit/ : /no new post progress/);
+  expect(result.reconciliation).toBeNull(); expect(result.bodiesDownloaded).toBe(0);
+  expect(await state()).toEqual(before);
+  expect((await repo.listContents(id)).map((entry) => entry.postId)).toEqual(['101', '102', '103']);
+  expect(await repo.listSavedUnlisted(id)).toEqual([]);
+  expect(await repo.getStory(id)).toMatchObject({ lastUpdateAttemptAt: 200, lastUpdateSuccessAt: 100, total: 3, downloaded: 3 });
+  expect(requests).toHaveLength(1 + (reason === 'document-limit' ? MAX_MANIFEST_DOCUMENTS
+    : MAX_MANIFEST_NO_PROGRESS + (reason === 'cancelled' ? 0 : 1)));
+  expect(requests.every((url) => url === importRootUrl || url.startsWith(indexUrl))).toBe(true);
+}, reason === 'document-limit'));
 
 test('v2 -> v3 preserves stories, manifests, bodies, locators, preferences and bundled asset; rebuild rolls back on failure', async () => {
   host.close(); host = hostSqlite(join(folder, 'legacy.db')); await migrate(host.db, 2); repo = createRepository(host.db);
