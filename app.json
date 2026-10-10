@@ -11,12 +11,26 @@
       "bundleIdentifier": "com.owencchapman.stowaway",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "icon": {
+        "light": "./assets/stowaway-icon-default-1024.png",
+        "dark": "./assets/stowaway-icon-dark-1024.png",
+        "tinted": "./assets/stowaway-icon-tinted-1024.png"
       }
     },
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F5F0E6",
+          "dark": {
+            "backgroundColor": "#171D24"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
