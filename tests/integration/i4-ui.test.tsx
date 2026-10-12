@@ -26,6 +26,7 @@ import { RequestClient } from '../../src/sources/spacebattles/request';
 import { page } from '../fixtures/spacebattles';
 import { bodyArticle } from '../fixtures/import';
 import type { StoryMetadata } from '../../src/domain/types';
+import * as buildAudience from '../../src/config/build-audience';
 
 let mockBlur: () => void, mockRefocus: () => void;
 jest.mock('expo-router', () => {
@@ -37,6 +38,7 @@ jest.mock('expo-router', () => {
     }, [callback]) };
 });
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
+jest.mock('../../src/config/build-audience', () => ({ __esModule: true, BUILD_AUDIENCE: 'internal-personal' }));
 jest.mock('../../src/storage/context', () => ({ useStorage: jest.fn() }));
 jest.mock('../../src/storage/management-native', () => ({ manageNativeStory: jest.fn(), cleanupNativeStoryFiles: jest.fn() }));
 jest.mock('../../src/importing/native', () => ({ importNativeStory: jest.fn(), updateNativeStory: jest.fn() }));
@@ -75,6 +77,44 @@ async function ready() { const view = render(<StoryContents />); await waitFor((
 function handler(label: string): () => void { return retainedPress(label); }
 function confirmation(text: string) { const call = jest.mocked(Alert.alert).mock.calls.at(-1)!; const button = call[2]!.find((button) => button.text === text)!; expect(button).toBeTruthy(); act(() => button.onPress?.()); }
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
+
+test.each(['public', 'unconfigured'] as const)('M0 %s screens preserve local reading, Read/locator/Continue, confirmations, deletion and cleanup', async (audience) => {
+  jest.replaceProperty(buildAudience, 'BUILD_AUDIENCE', audience);
+  const chapter = (await repo.getChapter(`${id}:post:101`))!;
+  const locator = { chapterId: chapter.id, contentHash: chapter.contentHash, blockId: chapter.blockIds[0]!, offset: 7, progression: .2, expandedSpoilers: [] };
+  await repo.saveLocator(locator);
+  const view = await ready();
+  for (const label of ['Check for Updates', 'Download Images', 'Retry Images', 'Resume Download']) expect(screen.queryByLabelText(label)).toBeNull();
+  await waitFor(() => expect(screen.getByLabelText('Continue Reading')).toBeEnabled());
+  fireEvent.press(screen.getByLabelText('Continue Reading'));
+  expect(router.push).toHaveBeenCalledWith({ pathname: '/reader', params: { chapter: chapter.id } });
+  fireEvent.press(screen.getByLabelText('Mark First as unread'));
+  await waitFor(() => expect(screen.getByLabelText('Mark First as read')).toBeEnabled());
+  expect(await repo.getLocator(chapter.id)).toEqual(locator); expect(await repo.getChapter(chapter.id)).toEqual(chapter);
+  fireEvent.press(screen.getByLabelText(downloadLabel)); confirmation('Cancel'); expect(manageNativeStory).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByLabelText(downloadLabel)); confirmation('Remove Downloads');
+  await waitFor(() => expect(screen.getByText(/^Downloads removed\./)).toBeTruthy());
+  expect(await repo.getChapter(chapter.id)).toBeNull(); expect(await repo.getLocator(chapter.id)).toEqual(locator);
+  expect(screen.getByLabelText('Mark First as read')).toBeEnabled(); expect(screen.queryByLabelText('Resume Download')).toBeNull();
+  jest.mocked(manageNativeStory).mockImplementation((story, action, repository, onSettled) => repository.manageStory(story, action,
+    { cleanup: async () => { throw new Error('Synthetic cleanup failure'); }, onSettled }));
+  fireEvent.press(screen.getByLabelText(storyLabel)); confirmation('Continue');
+  expect(await repo.getStory(id)).not.toBeNull(); confirmation('Remove Story');
+  await waitFor(() => expect(screen.getByText(CLEANUP_WARNING)).toBeTruthy()); expect(await repo.getStory(id)).toBeNull();
+  fireEvent.press(screen.getByLabelText('Retry local cleanup')); await waitFor(() => expect(screen.queryByText(CLEANUP_WARNING)).toBeNull());
+  expect(cleanupNativeStoryFiles).toHaveBeenCalledWith(id, repo); expect(await repo.getStory(otherId)).not.toBeNull();
+  view.unmount(); jest.mocked(useLocalSearchParams).mockReturnValue({ story: id }); render(<AddStory />);
+  await waitFor(() => expect(screen.getByText('Story is not in the local library.')).toBeTruthy());
+  expect(importNativeStory).not.toHaveBeenCalled(); expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled();
+});
+
+test('M0 retained acquisition handlers recheck eligibility without weakening focus/busy guards', async () => {
+  const view = await ready(); const update = handler('Check for Updates'), images = handler('Download Images'), resume = handler('Resume Download');
+  jest.replaceProperty(buildAudience, 'BUILD_AUDIENCE', 'public'); view.rerender(<StoryContents />);
+  await act(async () => { update(); images(); resume(); });
+  expect(updateNativeStory).not.toHaveBeenCalled(); expect(downloadNativeImages).not.toHaveBeenCalled(); expect(router.push).not.toHaveBeenCalled();
+  expect(screen.getByLabelText(downloadLabel)).toBeEnabled();
+});
 
 test('400-chapter Contents stays virtualized and one header disclosure reaches the same maintenance actions', async () => {
   await repo.reconcileManifest(id, metadata, { state: 'COMPLETE', entries: Array.from({ length: 400 }, (_, i) => ({

@@ -13,6 +13,7 @@ import { S1Failure } from '../src/sources/spacebattles/types';
 import type { ChapterReaderProps } from '../src/reader/ChapterReader';
 import type { StorySummary } from '../src/domain/types';
 import { threadUrl } from './fixtures/spacebattles';
+import * as buildAudience from '../src/config/build-audience';
 
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
@@ -21,6 +22,7 @@ jest.mock('expo-router', () => {
 });
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('../src/storage/context', () => ({ useStorage: jest.fn() }));
+jest.mock('../src/config/build-audience', () => ({ __esModule: true, BUILD_AUDIENCE: 'internal-personal' }));
 jest.mock('../src/importing/native', () => ({ importNativeStory: jest.fn() }));
 let mockReaderProps: ChapterReaderProps;
 jest.mock('../src/reader/ChapterReader', () => ({ ChapterReader: (props: ChapterReaderProps) => { mockReaderProps = props; return null; } }));
@@ -63,6 +65,19 @@ test('Library lists stories/counts and routes Add Story and selected contents', 
   fireEvent.press(screen.getByLabelText('Add Story')); expect(router.push).toHaveBeenCalledWith('/add-story');
   fireEvent.press(screen.getByLabelText('Open Synthetic import'));
   expect(router.push).toHaveBeenCalledWith({ pathname: '/story', params: { story: story.id } });
+});
+
+test.each(['public', 'unconfigured'] as const)('M0 %s Add Story and deep-linked Resume cannot acquire, including keyboard submission', async (audience) => {
+  jest.replaceProperty(buildAudience, 'BUILD_AUDIENCE', audience);
+  const view = render(<AddStory />);
+  fireEvent.changeText(screen.getByLabelText('Public SpaceBattles thread URL'), threadUrl);
+  expect(screen.getByLabelText('Import story')).toBeDisabled();
+  fireEvent(screen.getByLabelText('Public SpaceBattles thread URL'), 'submitEditing');
+  expect(run).not.toHaveBeenCalled(); expect(screen.getByText(/Existing local reading and removal remain available/)).toBeTruthy();
+  jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id }); view.rerender(<AddStory />);
+  await waitFor(() => expect(screen.queryByText('Loading saved story…')).toBeNull());
+  expect(screen.getByLabelText('Resume Download')).toBeDisabled(); expect(screen.getByLabelText('Open story contents')).toBeEnabled();
+  fireEvent.press(screen.getByLabelText('Resume Download')); expect(run).not.toHaveBeenCalled();
 });
 
 test('Import starts deliberately, renders progress, cancels and exposes persistent partial resume', async () => {
@@ -164,6 +179,20 @@ test('editing a new import URL clears old result actions and imports the newly s
   expect(run).toHaveBeenLastCalledWith(otherUrl, repository, expect.anything());
   fireEvent.press(screen.getByLabelText('Open story contents'));
   expect(router.replace).toHaveBeenCalledWith({ pathname: '/story', params: { story: other.id } });
+});
+test.each(['returned', 'thrown'])('M0 resume retains explicit retry after a %s failure without a story summary', async (kind) => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });
+  if (kind === 'returned') run.mockResolvedValueOnce({ story: null, failure: new S1Failure('network', 'Synthetic failed attempt') });
+  else run.mockRejectedValueOnce(new Error('Synthetic failed attempt'));
+  run.mockResolvedValueOnce({ story, failure: null });
+  render(<AddStory />);
+  await waitFor(() => expect(screen.getByLabelText('Resume Download')).toBeEnabled());
+  fireEvent.press(screen.getByLabelText('Resume Download'));
+  await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+  expect(screen.getByLabelText('Resume Download')).toBeEnabled(); expect(run).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByLabelText('Resume Download'));
+  await waitFor(() => expect(screen.getByLabelText('Open story contents')).toBeEnabled());
+  expect(run).toHaveBeenCalledTimes(2); expect(run).toHaveBeenLastCalledWith(threadUrl, repository, expect.anything());
 });
 test('contents preserves order, gates missing bodies, offers resume and opens source only deliberately', async () => {
   jest.mocked(useLocalSearchParams).mockReturnValue({ story: story.id });

@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { AppState, Keyboard, KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
-import { importNativeStory } from '../importing/native';
-import type { ImportProgress, ImportResult } from '../importing/import-story';
+import { sourceOperations } from '../sources/native-operations';
+import type { ImportProgress } from '../importing/import-story';
+import type { SourceImportResult } from '../sources/operations';
+import { BUILD_AUDIENCE } from '../config/build-audience';
+import { storyOrigin } from '../domain/source-capabilities';
+import type { StoryMetadata } from '../domain/types';
+import { sourceEligibility, SPACEBATTLES_ORIGIN } from '../sources/registry';
 import { AppScreen, AppText, Button, Card, InlineBanner, LoadingState, OperationPanel, ScreenHeader, uiStyles as styles } from '../ui/components';
 import { importProgressText } from '../ui/operation-copy';
 import { useTheme } from '../ui/theme';
@@ -21,10 +26,16 @@ function AddStoryForm({ id }: { id: string }) {
   const [url, setUrl] = useState('');
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
-  const [result, setResult] = useState<ImportResult | null>(null);
+  const [result, setResult] = useState<SourceImportResult | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [prefilledId, setPrefilledId] = useState<string | null>(null);
+  const [resumeTarget, setResumeTarget] = useState<StoryMetadata | null>(null);
   const prefilling = !!id && prefilledId !== id;
+  const story = prefilling ? null : result?.story;
+  // A failed attempt can have no summary; retain the loaded route identity for explicit retry.
+  const operationStory = story ?? resumeTarget;
+  const eligibility = sourceEligibility(operationStory ? storyOrigin(operationStory) : id ? null : SPACEBATTLES_ORIGIN,
+    id || story ? 'resume' : 'import', BUILD_AUDIENCE);
   const abort = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -36,22 +47,26 @@ function AddStoryForm({ id }: { id: string }) {
     let active = true;
     if (id) repository.getStory(id).then((story) => {
       if (active) {
+        setResumeTarget(story);
         setUrl(story?.sourceUrl ?? ''); setResult(story ? { story, failure: null } : null); setProgress(null);
         setLocalError(story ? null : 'Story is not in the local library.');
       }
     }).catch(() => { if (active) {
+      setResumeTarget(null);
       setUrl(''); setResult(null); setProgress(null); setLocalError('storage: Could not read the saved story.');
     } })
       .finally(() => { if (active) setPrefilledId(id); });
     return () => { active = false; };
   }, [id, repository]);
   async function run(value: string) {
-    if (prefilling || abort.current) return;
+    if (prefilling || abort.current || eligibility.status !== 'allowed') return;
     const controller = new AbortController(); abort.current = controller;
     setRunning(true); setResult(null); setLocalError(null);
     try {
-      const outcome = await importNativeStory(value, repository, { signal: controller.signal,
-        onProgress: (next) => { if (mounted.current) setProgress(next); } });
+      const options = { signal: controller.signal,
+        onProgress: (next: ImportProgress) => { if (mounted.current) setProgress(next); } };
+      const outcome = operationStory ? await sourceOperations.resumeStory(operationStory, repository, options)
+        : await sourceOperations.importStory(value, repository, options);
       if (mounted.current) setResult(outcome);
     } catch { if (mounted.current) setLocalError('Local operation failed; completed text is retained. Reopen the local story and retry.'); }
     finally { abort.current = null; if (mounted.current) setRunning(false); }
@@ -61,7 +76,6 @@ function AddStoryForm({ id }: { id: string }) {
     setUrl(value); setResult(null); setProgress(null); setLocalError(null);
   }
 
-  const story = prefilling ? null : result?.story;
   const paused = !!result?.failure && !!story && story.downloaded < story.total;
   return <AppScreen><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
@@ -83,13 +97,14 @@ function AddStoryForm({ id }: { id: string }) {
           <AppText tone="caption">Only primary Threadmarks are imported. Downloads stay on this device.</AppText>
         </>}
         {!running && (!story || story.downloaded < story.total) && <Button label={id || story ? 'Resume Download' : 'Import story'}
-          text={id || story ? 'Resume Download' : 'Import Story'} variant="primary" disabled={prefilling || !(story?.sourceUrl ?? url).trim()}
+          text={id || story ? 'Resume Download' : 'Import Story'} variant="primary" disabled={prefilling || !(story?.sourceUrl ?? url).trim() || eligibility.status !== 'allowed'}
           onPress={() => { Keyboard.dismiss(); void run(story?.sourceUrl ?? url); }} />}
         {running && <><OperationPanel title={id ? 'Resuming download' : 'Importing story'} message={importProgressText(progress)}
           completed={progress?.phase === 'downloading' ? progress.downloaded : undefined} total={progress?.phase === 'downloading' ? progress.total : undefined}
           cancelLabel="Cancel import" onCancel={() => abort.current?.abort()} />
           <AppText tone="caption">Leaving pauses the download after any save already in progress finishes.</AppText></>}
         {localError && <InlineBanner tone="error" message={localError} />}
+        {!prefilling && eligibility.status === 'policy-disabled' && <InlineBanner tone="info" message={eligibility.message} />}
         {result?.failure && <InlineBanner tone={result.failure.code === 'cancelled' ? 'info' : 'error'}
           title={paused ? 'Download paused' : 'Could not finish'} message={failureContext(result.failure)}>
           {__DEV__ && <AppText tone="caption">{result.failure.code}: {result.failure.message}</AppText>}

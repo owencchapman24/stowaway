@@ -38,6 +38,7 @@ jest.mock('expo-router', () => {
     }, [callback]) };
 });
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
+jest.mock('../../src/config/build-audience', () => ({ BUILD_AUDIENCE: 'internal-personal' }));
 jest.mock('../../src/storage/context', () => ({ useStorage: jest.fn() }));
 jest.mock('../../src/storage/native', () => ({ openStorage: jest.fn() }));
 jest.mock('../../src/importing/native', () => ({ updateNativeStory: jest.fn() }));

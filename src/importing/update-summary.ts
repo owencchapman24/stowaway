@@ -1,6 +1,6 @@
 import type { UpdateResult } from './import-story';
 
-export function describeUpdate(result: UpdateResult): string {
+export function describeUpdate(result: Omit<UpdateResult, 'failure'> & { failure: unknown }): string {
   const changes = result.reconciliation;
   if (!changes) return 'Previous primary contents kept; no complete update committed.';
   const parts: string[] = [];
