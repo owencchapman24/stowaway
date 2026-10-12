@@ -3,9 +3,11 @@ import { router } from 'expo-router';
 import { FlatList, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Control } from '../reader/controls';
-import { runNativeDiagnostic } from '../sources/spacebattles/native';
+import { runNativeDiagnostic, USER_AGENT } from '../sources/native-operations';
 import { S1Failure, type Diagnostic } from '../sources/spacebattles/types';
-import { USER_AGENT } from '../sources/spacebattles/request';
+import { SourceOperationFailure } from '../sources/operations';
+import { BUILD_AUDIENCE } from '../config/build-audience';
+import { sourceEligibility, SPACEBATTLES_ORIGIN } from '../sources/registry';
 
 export default function S1Screen() {
   const [url, setUrl] = useState('');
@@ -18,6 +20,7 @@ export default function S1Screen() {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; abort.current?.abort(); }; }, []);
 
   async function run() {
+    if (!__DEV__ || sourceEligibility(SPACEBATTLES_ORIGIN, 'diagnostic', BUILD_AUDIENCE).status !== 'allowed') return;
     setRunning(true); setResult(null); setState('Starting');
     const controller = new AbortController();
     abort.current = controller;
@@ -29,7 +32,7 @@ export default function S1Screen() {
       });
       if (mounted.current) { setResult(diagnostic); setState(diagnostic.failure ? `${diagnostic.failure.code}: ${diagnostic.failure.message}` : 'Diagnostic finished; compare with the site.'); }
     } catch (error) {
-      if (mounted.current) setState(error instanceof S1Failure ? `${error.code}: ${error.message}` : 'Diagnostic failed.');
+      if (mounted.current) setState(error instanceof S1Failure || error instanceof SourceOperationFailure ? `${error.code}: ${error.message}` : 'Diagnostic failed.');
     } finally {
       if (mounted.current) setRunning(false);
       abort.current = null;
@@ -37,6 +40,8 @@ export default function S1Screen() {
   }
 
   if (!__DEV__) return <SafeAreaView><Text>S1 diagnostics are available in development only.</Text></SafeAreaView>;
+  const eligibility = sourceEligibility(SPACEBATTLES_ORIGIN, 'diagnostic', BUILD_AUDIENCE);
+  if (eligibility.status !== 'allowed') return <SafeAreaView><Text>{eligibility.message}</Text></SafeAreaView>;
   const manifest = result?.manifest;
   const entries = manifest?.entries ?? [];
   return <SafeAreaView style={styles.page}><FlatList

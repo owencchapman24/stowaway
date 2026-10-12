@@ -28,6 +28,7 @@ jest.mock('expo-router', () => {
     useLocalSearchParams: jest.fn(), useFocusEffect: (callback: () => (() => void)) => useEffect(callback, [callback]) };
 });
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
+jest.mock('../../src/config/build-audience', () => ({ BUILD_AUDIENCE: 'internal-personal' }));
 jest.mock('../../src/storage/context', () => ({ useStorage: jest.fn() }));
 jest.mock('../../src/importing/native', () => ({ updateNativeStory: jest.fn() }));
 jest.mock('../../src/storage/files', () => ({ createRenderFile: jest.fn() }));

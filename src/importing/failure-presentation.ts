@@ -1,9 +1,11 @@
 import type { S1Failure } from '../sources/spacebattles/types';
 import type { ImportFailure } from './ownership';
+import type { SourceOperationFailure } from '../sources/operations';
 
 /** Keep the typed detail, with a short product explanation of what failed. */
-export function failureContext(failure: S1Failure | ImportFailure): string {
+export function failureContext(failure: S1Failure | ImportFailure | SourceOperationFailure): string {
   switch (failure.code) {
+    case 'policy-disabled': case 'unsupported-source': case 'unsupported-operation': return failure.message;
     case 'blocked': case 'challenge': return 'Source access blocked. Requests stopped; do not retry around an access or login challenge.';
     case 'incomplete': return 'Incomplete primary index. The previous complete contents are retained; this is not a no-updates result.';
     case 'parser': case 'unsupported-structure': return 'Source content could not be parsed safely. Existing downloaded content is retained.';

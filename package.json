@@ -7,12 +7,13 @@
     "node": ">=22.13.0 <23 || >=24.3.0 <25"
   },
   "scripts": {
-    "start": "expo start --go",
-    "android": "expo start --android --go",
+    "start": "node scripts/expo-internal.mjs --go",
+    "android": "node scripts/expo-internal.mjs --android --go",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "jest --runInBand",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "test:lint-boundary": "node --test --test-reporter=spec tests/lint-boundary.test.cjs",
+    "check": "npm run typecheck && npm run lint && npm run test:lint-boundary && npm test"
   },
   "dependencies": {
     "domhandler": "^6.0.1",

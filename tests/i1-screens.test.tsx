@@ -28,6 +28,7 @@ jest.mock('expo-router', () => {
 });
 jest.mock('expo-router/react-navigation', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('../src/storage/context', () => ({ useStorage: jest.fn() }));
+jest.mock('../src/config/build-audience', () => ({ BUILD_AUDIENCE: 'internal-personal' }));
 jest.mock('../src/importing/native', () => ({ updateNativeStory: jest.fn() }));
 jest.mock('../src/images/native', () => ({ downloadNativeImages: jest.fn() }));
 const story: StorySummary = { id: 'spacebattles:thread:9001', source: 'spacebattles', threadId: '9001',

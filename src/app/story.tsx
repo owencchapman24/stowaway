@@ -3,20 +3,22 @@ import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { Alert, AppState, FlatList, Linking, View } from 'react-native';
 import type { ContinueReadingTarget, StoryContentsEntry, StorySummary } from '../domain/types';
-import type { ImportProgress, UpdateResult } from '../importing/import-story';
-import { updateNativeStory } from '../importing/native';
+import type { ImportProgress } from '../importing/import-story';
+import { sourceOperations } from '../sources/native-operations';
+import { SourceOperationFailure, type SourceUpdateResult, type SourceImageResult } from '../sources/operations';
+import { BUILD_AUDIENCE } from '../config/build-audience';
+import { storyOrigin, type SourceOperation } from '../domain/source-capabilities';
+import { sourceEligibility } from '../sources/registry';
 import { describeUpdate } from '../importing/update-summary';
 import { AppScreen, AppText, Button, ChapterRow, InlineBanner, LoadingState, OperationPanel, ScreenHeader, SectionHeader, storySummary, uiStyles as styles } from '../ui/components';
 import { useStorage } from '../storage/context';
-import { downloadNativeImages } from '../images/native';
 import { describeImages } from '../images/summary';
-import type { ImageProgress, ImageResult } from '../images/download';
+import type { ImageProgress } from '../images/download';
 import type { ImageSummary } from '../images/types';
 import { importProgressText, imageProgressText } from '../ui/operation-copy';
 import { failureContext } from '../importing/failure-presentation';
 import { acquireStory, ImportFailure, isStoryBusy, subscribeStoryOperations, subscribeStorySettled, withLocalStoryWrite } from '../importing/ownership';
 import { CLEANUP_WARNING, type ManagementAction } from '../storage/management';
-import { cleanupNativeStoryFiles, manageNativeStory } from '../storage/management-native';
 
 export default function StoryContents() {
   const params = useLocalSearchParams<{ story?: string }>();
@@ -39,10 +41,10 @@ function Contents({ id }: { id: string }) {
   const displayedEntries = useRef<StoryContentsEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
-  const [outcome, setOutcome] = useState<UpdateResult | null>(null);
+  const [outcome, setOutcome] = useState<SourceUpdateResult | null>(null);
   const [imageSummary, setImageSummary] = useState<ImageSummary | null>(null);
   const [imageProgress, setImageProgress] = useState<ImageProgress | null>(null);
-  const [imageOutcome, setImageOutcome] = useState<ImageResult | null>(null);
+  const [imageOutcome, setImageOutcome] = useState<SourceImageResult | null>(null);
   const [operation, setOperation] = useState<'update' | 'images' | null>(null);
   const [running, setRunning] = useState(false);
   const [savingRead, setSavingRead] = useState(false);
@@ -54,6 +56,7 @@ function Contents({ id }: { id: string }) {
   const ownedElsewhere = useSyncExternalStore(subscribeStoryOperations, () => isStoryBusy(id));
   const busy = running || savingRead || managing || ownedElsewhere || refreshingForeign;
   const abort = useRef<AbortController | null>(null);
+  const can = (action: SourceOperation) => sourceEligibility(story && storyOrigin(story), action, BUILD_AUDIENCE).status === 'allowed';
   // Cancellation does not settle a transaction whose COMMIT is already underway.
   usePreventRemove(busy, () => {});
   const focused = useRef(false);
@@ -113,7 +116,7 @@ function Contents({ id }: { id: string }) {
   }, []);
 
   async function runOperation(images = false) {
-    if (!focused.current || foreignRefresh.current || abort.current || readWrite.current || management.current || isStoryBusy(id) || story?.id !== id || story.source !== 'spacebattles') return;
+    if (!focused.current || foreignRefresh.current || abort.current || readWrite.current || management.current || isStoryBusy(id) || story?.id !== id || !can(images ? 'images' : 'update')) return;
     const controller = new AbortController(); abort.current = controller;
     const focus = focusVersion.current;
     readVersion.current++;
@@ -127,12 +130,12 @@ function Contents({ id }: { id: string }) {
     };
     try {
       if (images) {
-        const result = await downloadNativeImages(id, repository, { signal: controller.signal, onSettled,
+        const result = await sourceOperations.downloadImages(story, repository, { signal: controller.signal, onSettled,
           onProgress: (next) => { if (owned()) setImageProgress(next); } });
         if (result.storyId !== id) throw new Error('Image result belongs to a different story.');
         if (owned()) setImageOutcome(result);
       } else {
-        const result = await updateNativeStory(story, repository, { signal: controller.signal, onSettled,
+        const result = await sourceOperations.updateStory(story, repository, { signal: controller.signal, onSettled,
           onProgress: (next) => { if (owned() && (!next.storyId || next.storyId === id)) setProgress(next); } });
         if (result.story && result.story.id !== id) throw new Error('Update result belongs to a different story.');
         if (owned()) setOutcome(result);
@@ -181,7 +184,7 @@ function Contents({ id }: { id: string }) {
   }
 
   function confirmManagement(action: ManagementAction) {
-    if (!focused.current || foreignRefresh.current || abort.current || readWrite.current || management.current || isStoryBusy(id) || story?.id !== id || story.source !== 'spacebattles') return;
+    if (!focused.current || foreignRefresh.current || abort.current || readWrite.current || management.current || isStoryBusy(id) || story?.id !== id || !can(action === 'downloads' ? 'remove-downloads' : 'remove-story')) return;
     const token = { phase: 'first' as 'first' | 'final' | 'running', story, action };
     management.current = token; setManaging(true);
     const valid = () => focused.current && management.current === token && token.story.id === id;
@@ -192,7 +195,7 @@ function Contents({ id }: { id: string }) {
       setError(null); setOutcome(null); setProgress(null); setImageOutcome(null); setImageProgress(null); setManagementStatus(null);
       const refreshed: { value: Awaited<ReturnType<typeof refresh>> } = { value: 'stale' };
       try {
-        const result = await manageNativeStory(token.story, action, repository, async () => {
+        const result = await sourceOperations.manageStory(token.story, action, repository, async () => {
           while (focused.current && refreshed.value === 'stale') refreshed.value = await refresh();
         });
         if (valid()) {
@@ -201,7 +204,7 @@ function Contents({ id }: { id: string }) {
           setManagementStatus(action === 'downloads' ? 'Downloads removed. Story metadata, Read/Unread state, positions and update history retained. Use Resume Download for current chapters.' : 'Story removed from this device. Return to Library to continue.');
         }
       } catch (failure) {
-        if (valid()) setError(failure instanceof ImportFailure ? failure.message : 'Local removal could not finish. Reopen contents to check the saved state before retrying.');
+        if (valid()) setError(failure instanceof ImportFailure || failure instanceof SourceOperationFailure ? failure.message : 'Local removal could not finish. Reopen contents to check the saved state before retrying.');
       } finally {
         if (management.current === token) { management.current = null; if (focused.current) setManaging(false); }
       }
@@ -229,7 +232,7 @@ function Contents({ id }: { id: string }) {
     management.current = token; setManaging(true);
     try {
       release = acquireStory(id);
-      await cleanupNativeStoryFiles(id, repository);
+      await sourceOperations.cleanupStoryFiles(id, repository);
       if (focused.current && management.current === token) setCleanupWarning(null);
     } catch { if (focused.current && management.current === token) setCleanupWarning(CLEANUP_WARNING); }
     finally {
@@ -249,7 +252,7 @@ function Contents({ id }: { id: string }) {
   const start = entries.find((entry) => entry.downloaded && !entry.isRead) ?? entries.find((entry) => entry.downloaded);
   const readingTarget = resume?.chapterId ?? start?.id;
   const canAct = () => focused.current && !foreignRefresh.current && !abort.current && !readWrite.current && !management.current && !isStoryBusy(id);
-  const resumeDownload = () => { if (canAct()) router.push({ pathname: '/add-story', params: { story: id } }); };
+  const resumeDownload = () => { if (canAct() && can('resume')) router.push({ pathname: '/add-story', params: { story: id } }); };
   function openChapter(chapter: string) {
     if (canAct() && !focusRefresh.current && displayedEntries.current.some((entry) => entry.id === chapter && entry.downloaded)) {
       router.push({ pathname: '/reader', params: { chapter } });
@@ -258,12 +261,12 @@ function Contents({ id }: { id: string }) {
   const maintenance = story && <View style={{ marginTop: 32, gap: 24 }}>
         {!!story.sourceUrl && <View style={{ gap: 8 }}>
           <SectionHeader>Story Actions</SectionHeader>
-          {story.source === 'spacebattles' && <>
+          {(can('update') || can('images') || can('resume')) && <>
             <View style={styles.actions}>
-              <Button label="Check for Updates" text="Check for Updates" variant="tertiary" disabled={busy} onPress={() => { void runOperation(); }} />
-              {!!imageSummary && (imageSummary.unknown > 0 || imageSummary.pending > 0 || imageSummary.local > 0 || !!imageSummary.mimeRetryable) &&
+              {can('update') && <Button label="Check for Updates" text="Check for Updates" variant="tertiary" disabled={busy} onPress={() => { void runOperation(); }} />}
+              {can('images') && !!imageSummary && (imageSummary.unknown > 0 || imageSummary.pending > 0 || imageSummary.local > 0 || !!imageSummary.mimeRetryable) &&
                 <Button label={imageAction} text={imageAction} variant="tertiary" disabled={busy} onPress={() => { void runOperation(true); }} />}
-              {!!readingTarget && story.downloaded < story.total && <Button label="Resume Download" text="Resume Download" variant="tertiary" disabled={busy} onPress={resumeDownload} />}
+              {can('resume') && !!readingTarget && story.downloaded < story.total && <Button label="Resume Download" text="Resume Download" variant="tertiary" disabled={busy} onPress={resumeDownload} />}
             </View>
             {imageSummary && <AppText tone="caption">{describeImages(imageSummary)}</AppText>}
           </>}
@@ -271,10 +274,10 @@ function Contents({ id }: { id: string }) {
             onPress={() => { if (canAct()) void Linking.openURL(story.sourceUrl).catch(() => { if (focused.current) setError('Could not open the source in your browser.'); }); }} />
           {story.lastUpdateAttemptAt !== null && <AppText tone="caption">Last update attempt: {new Date(story.lastUpdateAttemptAt).toLocaleString()}</AppText>}
           {story.lastUpdateSuccessAt !== null && <AppText tone="caption">Last complete check: {new Date(story.lastUpdateSuccessAt).toLocaleString()}</AppText>}
-          {story.source === 'spacebattles' && <><AppText tone="secondary">Free local storage while keeping this story, Read/Unread state, reading positions and update history.</AppText>
+          {can('remove-downloads') && <><AppText tone="secondary">Free local storage while keeping this story, Read/Unread state, reading positions and update history.</AppText>
             <Button label={'Remove downloads for ' + story.title} text="Remove Downloads" variant="destructive" disabled={busy} onPress={() => confirmManagement('downloads')} /></>}
         </View>}
-        {story.source === 'spacebattles' && <View style={{ gap: 8 }}><SectionHeader>Danger Zone</SectionHeader>
+        {can('remove-story') && <View style={{ gap: 8 }}><SectionHeader>Danger Zone</SectionHeader>
           <AppText tone="secondary">Remove this story and all of its Stowaway data from this device.</AppText>
           <Button label={'Remove story ' + story.title + ' and all local state'} text="Remove Story" variant="destructive" disabled={busy} onPress={() => confirmManagement('story')} />
         </View>}
@@ -298,7 +301,7 @@ function Contents({ id }: { id: string }) {
               onPress={() => openChapter(readingTarget)} />
             <AppText tone="secondary">{resume?.chapterTitle ?? start?.title}</AppText>
             {resume && !resume.currentlyListed && <AppText tone="caption">Saved chapter no longer listed</AppText>}
-          </View> : story.source === 'spacebattles' && story.downloaded < story.total &&
+          </View> : can('resume') && story.downloaded < story.total &&
             <Button label="Resume Download" text="Resume Download" variant="primary" disabled={busy} onPress={resumeDownload} />}
 
         </>}

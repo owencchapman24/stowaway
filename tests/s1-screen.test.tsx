@@ -4,14 +4,23 @@ import { runNativeDiagnostic } from '../src/sources/spacebattles/native';
 import { threadFromUrl } from '../src/sources/spacebattles/url';
 import { threadUrl } from './fixtures/spacebattles';
 import { S1Failure } from '../src/sources/spacebattles/types';
+import * as buildAudience from '../src/config/build-audience';
 
 jest.mock('expo-router', () => ({ router: { back: jest.fn() } }));
+jest.mock('../src/config/build-audience', () => ({ __esModule: true, BUILD_AUDIENCE: 'internal-personal' }));
 jest.mock('../src/sources/spacebattles/native', () => ({ runNativeDiagnostic: jest.fn() }));
 const run = jest.mocked(runNativeDiagnostic);
 // RN compiles lazy list/scroll components on first render. Keep that synchronous tooling
 // setup outside the async action timeout, including in a clean-cache CI run.
 beforeAll(() => { const warm = render(<S1Screen />); warm.unmount(); });
 beforeEach(() => run.mockReset());
+afterEach(() => jest.restoreAllMocks());
+
+test.each(['public', 'unconfigured'] as const)('M0 S1 direct route denies %s audience', (audience) => {
+  jest.replaceProperty(buildAudience, 'BUILD_AUDIENCE', audience); render(<S1Screen />);
+  expect(screen.queryByLabelText('Run S1 diagnostic')).toBeNull();
+  expect(screen.getByText(/Existing local reading and removal remain available/)).toBeTruthy(); expect(run).not.toHaveBeenCalled();
+});
 
 test('dev screen starts only on deliberate action and shows complete manifest/sample metadata', async () => {
   run.mockResolvedValue({ thread: threadFromUrl(threadUrl), manifest: { state: 'COMPLETE', category: { id: '9', expected: 1, url: threadUrl + 'threadmarks' },
