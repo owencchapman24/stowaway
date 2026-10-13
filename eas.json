@@ -13,6 +13,13 @@
       "distribution": "internal",
       "env": { "EXPO_PUBLIC_STOWAWAY_BUILD_AUDIENCE": "internal-personal" }
     },
+    "epub-diagnostic": {
+      "extends": "preview",
+      "env": {
+        "EXPO_PUBLIC_STOWAWAY_BUILD_AUDIENCE": "internal-personal",
+        "EXPO_PUBLIC_STOWAWAY_EPUB_DIAGNOSTIC": "enabled"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "distribution": "store",

@@ -5,6 +5,7 @@ import type { AppStyle, ContinueReadingTarget, StorySummary } from '../domain/ty
 import { isStoryBusy, subscribeStoryOperations, subscribeStorySettled } from '../importing/ownership';
 import { useStorage } from '../storage/context';
 import { AppStyleSheet } from '../ui/appearance-modal';
+import { diagnosticAllowed } from '../epub-spike/policy';
 import { AppScreen, AppText, Button, ContinueReadingCard, InlineBanner, LoadingState, ScreenHeader, SectionHeader, StoryRow, uiStyles } from '../ui/components';
 
 export default function Library() {
@@ -58,6 +59,7 @@ export default function Library() {
       <Button label="Add your first story" text="Add Story" variant="primary" onPress={() => router.push('/add-story')} />
     </View> : null} ListFooterComponent={<View style={{ marginTop: 32, gap: 24 }}>
       <Button label="App Style" text={'App Style · ' + (appStyle === 'classic' ? 'Classic' : 'Stowaway')} variant="tertiary" quiet onPress={() => setAppearance(true)} />
+      {diagnosticAllowed() && <Button label="Open EPUB feasibility diagnostic" text="EPUB feasibility diagnostic" variant="tertiary" onPress={() => router.push('./epub-diagnostic')} />}
       {__DEV__ && <View>
       <SectionHeader>Development diagnostics</SectionHeader>
       <Button label="Open S1 development diagnostic" text="S1 diagnostic (dev only)" variant="tertiary" onPress={() => router.push('/s1')} />

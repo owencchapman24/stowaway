@@ -15,7 +15,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run epub:host-report
       - run: npx expo install --check
       - run: npx expo export --platform ios
         env:
           CI: '1'
+          EXPO_PUBLIC_STOWAWAY_BUILD_AUDIENCE: public
+          EXPO_PUBLIC_STOWAWAY_EPUB_DIAGNOSTIC: disabled
+      - run: npx expo export --platform ios --output-dir dist/epub-internal
+        env:
+          CI: '1'
+          EXPO_PUBLIC_STOWAWAY_BUILD_AUDIENCE: internal-personal
+          EXPO_PUBLIC_STOWAWAY_EPUB_DIAGNOSTIC: enabled
